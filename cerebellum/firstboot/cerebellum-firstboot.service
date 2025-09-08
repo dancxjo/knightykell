@@ -1,0 +1,13 @@
+[Unit]
+Description=KnightyKell Cerebellum First Boot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/cerebellum/firstboot.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
+

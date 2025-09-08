@@ -1,0 +1,25 @@
+services:
+  cerebellum:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: knightykell/cerebellum:latest
+    network_mode: host
+    privileged: true
+    restart: unless-stopped
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /dev:/dev
+      - /run/oled:/run/oled
+      - ros_logs:/var/log/ros2
+    # Optionally constrain resources on Pi
+    deploy:
+      resources:
+        limits:
+          cpus: '3.5'
+          memory: 2G
+volumes:
+  ros_logs:
