@@ -1,4 +1,4 @@
-// KnightyKell Brainstem: Pro Micro (ATmega32U4) firmware
+// Knightykell Brainstem: Pro Micro (ATmega32U4) firmware
 // Bridges USB Serial (cerebellum) and Serial1 (iRobot Create 1 OI)
 
 #include <Arduino.h>

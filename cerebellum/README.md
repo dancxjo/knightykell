@@ -1,4 +1,4 @@
-Pete KnightyKell — Cerebellum
+Pete Knightykell — Cerebellum
 
 Purpose
 - ROS 2 (Kaiju) + Nav2 stack, running in Docker on a Raspberry Pi 4 (Armbian-based image).
@@ -11,11 +11,12 @@ What’s here
 - firstboot/: systemd unit + script that installs Docker and starts compose
 - firstboot/oled-statusd.service + host/oled/: early-boot SH1106 OLED daemon and client
 - tools/build_rpi4_armbian_image.sh: downloads Armbian, injects files, outputs a burnable image
+ - docker/ros_statusd.py: ROS 2 status daemon with an HTTP dashboard + JSON API
 
 Quick start
 - Build container locally (optional):
-  - cd cerebellum/docker && docker build -t knightykell/cerebellum:latest .
-  - docker save knightykell/cerebellum:latest -o ../firstboot/image.tar
+  - cd cerebellum/docker && docker build -t Knightykell/cerebellum:latest .
+  - docker save Knightykell/cerebellum:latest -o ../firstboot/image.tar
 - Bake OS image:
   - cd cerebellum/tools
   - sudo ./build_rpi4_armbian_image.sh
@@ -34,7 +35,11 @@ OLED status
 - Message format: JSON `{"header": "BRINGUP", "lines": ["text1", "text2", ...]}`
 - CLI client: `/opt/cerebellum/oled/oled_client.py HEADER [LINE ...]`
 - The container mounts `/run/oled` and uses the client to emit progress.
-  - A small ROS 2 bridge inside the container (`ros2_oled_bridge.py`) periodically publishes node/topic counts to the OLED.
+  - A ROS 2 status daemon (`ros_statusd.py`) periodically updates the OLED and serves an HTTP dashboard on port 8080.
+
+Web dashboard
+- URL: `http://<robot-ip>:8080/` (auto-refreshing HTML) and `http://<robot-ip>:8080/api/status` (JSON)
+- Shows node/topic counts, rates for `/odom`, `/imu/data`, `/scan`, `/camera/image_raw`, and lifecycle states for common Nav2 nodes.
 
 Notes
 - Compose uses host networking for Cyclone DDS; set `ROS_DOMAIN_ID` as needed.

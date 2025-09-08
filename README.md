@@ -1,4 +1,4 @@
-KnightyKell System
+Knightykell System
 
 Overview
 - Multi-tier robot architecture with distinct roles:

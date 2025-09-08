@@ -1,4 +1,4 @@
-# KnightyKell Cerebellum container
+# Knightykell Cerebellum container
 # - Base: ROS 2 Kaiju
 # - Adds Nav2, common sensors, tools
 
@@ -51,5 +51,7 @@ COPY ../host/oled/oled_client.py /opt/entry/oled_client.py
 RUN chmod +x /opt/entry/oled_client.py
 COPY ros2_oled_bridge.py /opt/entry/ros2_oled_bridge.py
 RUN chmod +x /opt/entry/ros2_oled_bridge.py
+COPY ros_statusd.py /opt/entry/ros_statusd.py
+RUN chmod +x /opt/entry/ros_statusd.py
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/opt/entry/bringup.sh"]

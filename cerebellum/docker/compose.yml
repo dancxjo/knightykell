@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: knightykell/cerebellum:latest
+    image: Knightykell/cerebellum:latest
     network_mode: host
     privileged: true
     restart: unless-stopped

@@ -78,7 +78,7 @@ fi
 
 oled BRINGUP "All launched" "Tailing logs"
 echo "[bringup] all available nodes launched; tailing logs"
-if [ -S "$OLED_SOCK" ] && command -v python3 >/dev/null 2>&1; then
-  nohup python3 /opt/entry/ros2_oled_bridge.py > "$LOGDIR/oled_bridge.log" 2>&1 &
+if command -v python3 >/dev/null 2>&1; then
+  nohup python3 /opt/entry/ros_statusd.py > "$LOGDIR/ros_statusd.log" 2>&1 &
 fi
 exec tail -F "$LOGDIR"/*.log || exec bash

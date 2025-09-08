@@ -1,5 +1,5 @@
 [Unit]
-Description=KnightyKell Cerebellum First Boot
+Description=Knightykell Cerebellum First Boot
 After=network-online.target
 Wants=network-online.target
 

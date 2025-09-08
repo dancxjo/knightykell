@@ -1,4 +1,4 @@
-Pete KnightyKell — Brainstem
+Pete Knightykell — Brainstem
 
 Purpose
 - Arduino Pro Micro code that bridges the cerebellum (ROS2 host) to the iRobot Create 1 base.

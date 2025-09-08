@@ -1,4 +1,4 @@
-Pete KnightyKell — Forebrain
+Pete Knightykell — Forebrain
 
 Purpose
 - Headless laptop/PC with a decent GPU for LLMs, vision models, and task planning.
