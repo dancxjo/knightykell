@@ -2,7 +2,16 @@
 // Bridges USB Serial (cerebellum) and Serial1 (iRobot Create 1 OI)
 
 #include <Arduino.h>
+
+// Define PURE_PASSTHROUGH at build time to bypass JSON handling and
+// forward bytes directly between USB Serial and Serial1.
+#if !defined(PURE_PASSTHROUGH)
+#define PURE_PASSTHROUGH 0
+#endif
+
+#if !PURE_PASSTHROUGH
 #include <ArduinoJson.h>
+#endif
 
 // ---------- Config ----------
 static const uint32_t USB_BAUD = 115200;    // host ↔ brainstem
@@ -69,6 +78,7 @@ void oiLeds(bool advance, bool play, uint8_t color, uint8_t intensity) {
 }
 
 // ---------- JSON I/O ----------
+#if !PURE_PASSTHROUGH
 static const size_t JSON_CAP = 512; // adjust as needed
 StaticJsonDocument<JSON_CAP> doc;
 
@@ -217,6 +227,7 @@ void driveWatchdog() {
     sendJsonAck("watchdog", true, "stopped");
   }
 }
+#endif // !PURE_PASSTHROUGH
 
 // ---------- Arduino entry ----------
 void setup() {
@@ -231,15 +242,27 @@ void setup() {
   Serial1.begin(OI_BAUD);
   delay(50);
 
+#if !PURE_PASSTHROUGH
   oiStartSafe();
   lastDriveCmdMs = millis();
-
   sendReady();
+#endif
 }
 
 void loop() {
+#if PURE_PASSTHROUGH
+  // Pure passthrough: forward bytes both ways without interpretation
+  while (Serial.available()) {
+    int c = Serial.read();
+    if (c >= 0) Serial1.write((uint8_t)c);
+  }
+  while (Serial1.available()) {
+    int c = Serial1.read();
+    if (c >= 0) Serial.write((uint8_t)c);
+  }
+#else
   processSerialInput();
   pollSensors();
   driveWatchdog();
+#endif
 }
-

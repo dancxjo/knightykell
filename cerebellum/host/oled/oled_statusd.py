@@ -97,7 +97,7 @@ def get_ip_info():
         except Exception:
             return ""
 
-    ip_v4 = run("ip -4 -o addr show scope global | awk '{print $2":"$4}'")
+    ip_v4 = run("""ip -4 -o addr show scope global | awk '{print $2":"$4}' || true""")
     ssid = run("iwgetid -r || true")
     rssi = run("iw dev wlan0 link | awk -F' signal ' 'NF>1{print $2}' | awk '{print $1}' || true")
     return ip_v4, ssid, rssi
