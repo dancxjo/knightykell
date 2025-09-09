@@ -5,6 +5,7 @@ services:
       dockerfile: docker/Dockerfile
       args:
         ROS_DISTRO: ${ROS_DISTRO:-jazzy}
+        ROS_BASE_IMAGE: ${ROS_BASE_IMAGE:-ros:${ROS_DISTRO:-jazzy}-ros-base}
     image: knightykell/monitor:${ROS_DISTRO:-jazzy}
     network_mode: host
     environment:

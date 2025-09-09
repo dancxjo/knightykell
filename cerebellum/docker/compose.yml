@@ -3,6 +3,10 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        ROS_DISTRO: ${ROS_DISTRO:-jazzy}
+        ROS_BASE_IMAGE: ${ROS_BASE_IMAGE:-ros:${ROS_DISTRO:-jazzy}-ros-base}
+    platform: ${CEREBELLUM_PLATFORM:-}
     image: Knightykell/cerebellum:latest
     network_mode: host
     privileged: true

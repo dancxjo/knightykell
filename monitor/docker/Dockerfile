@@ -1,5 +1,6 @@
 ARG ROS_DISTRO=jazzy
-FROM ros:${ROS_DISTRO}-ros-base
+ARG ROS_BASE_IMAGE=ros:${ROS_DISTRO}-ros-base
+FROM ${ROS_BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive \
     ROS_DISTRO=${ROS_DISTRO} \

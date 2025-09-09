@@ -2,10 +2,12 @@
 # - Base: ROS 2 Jazzy
 # - Adds Nav2, common sensors, tools
 
-FROM ros:jazzy-ros-base
+ARG ROS_DISTRO=jazzy
+ARG ROS_BASE_IMAGE=ros:${ROS_DISTRO}-ros-base
+FROM ${ROS_BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    ROS_DISTRO=jazzy \
+    ROS_DISTRO=${ROS_DISTRO} \
     ROS_WS=/opt/ros_ws
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

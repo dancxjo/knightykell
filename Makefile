@@ -7,6 +7,14 @@ BUILDKIT_PROGRESS ?= plain
 export DOCKER_BUILDKIT
 export BUILDKIT_PROGRESS
 
+# ROS base image configuration
+ROS_DISTRO ?= jazzy
+ROS_BASE_IMAGE ?= ros:$(ROS_DISTRO)-ros-base
+
+# Cross-build platform configuration (use arm64 to debug Pi images locally)
+CEREBELLUM_PLATFORM ?= linux/arm64
+MONITOR_PLATFORM ?=
+
 # --- Cerebellum image build ---
 .PHONY: cerebellum-img cerebellum-cache-clean
 
@@ -50,7 +58,10 @@ compose_guard_cerebellum = @if [ -z "$(CEREBELLUM_COMPOSE)" ]; then \
 
 monitor-build:
 	$(compose_guard_monitor)
-	$(MONITOR_COMPOSE) build
+	DOCKER_DEFAULT_PLATFORM=$(MONITOR_PLATFORM) \
+	  $(MONITOR_COMPOSE) build \
+	    --build-arg ROS_DISTRO=$(ROS_DISTRO) \
+	    --build-arg ROS_BASE_IMAGE="$(ROS_BASE_IMAGE)"
 
 monitor-up:
 	$(compose_guard_monitor)
@@ -81,7 +92,10 @@ monitor-rqt:
 
 cerebellum-build:
 	$(compose_guard_cerebellum)
-	$(CEREBELLUM_COMPOSE) build cerebellum
+	DOCKER_DEFAULT_PLATFORM=$(CEREBELLUM_PLATFORM) \
+	  $(CEREBELLUM_COMPOSE) build \
+	    --build-arg ROS_DISTRO=$(ROS_DISTRO) \
+	    --build-arg ROS_BASE_IMAGE="$(ROS_BASE_IMAGE)" cerebellum
 
 # (QEMU emulation targets removed per request)
 
@@ -123,6 +137,8 @@ configure:
 	@echo "Using compose for monitor: $(if $(MONITOR_COMPOSE),$(MONITOR_COMPOSE),<none>)"
 	@echo "Using compose for cerebellum: $(if $(CEREBELLUM_COMPOSE),$(CEREBELLUM_COMPOSE),<none>)"
 	@echo "BuildKit: DOCKER_BUILDKIT=$(DOCKER_BUILDKIT), BUILDKIT_PROGRESS=$(BUILDKIT_PROGRESS)"
+	@echo "ROS: ROS_DISTRO=$(ROS_DISTRO), ROS_BASE_IMAGE=$(ROS_BASE_IMAGE)"
+	@echo "Platforms: MONITOR_PLATFORM=$(MONITOR_PLATFORM), CEREBELLUM_PLATFORM=$(CEREBELLUM_PLATFORM)"
 	@echo "IMG_OUT: $(IMG_OUT)"
 	@echo "PREFIX: $(PREFIX)"
 	@echo "SYSTEMD_DIR: $(SYSTEMD_DIR)"
