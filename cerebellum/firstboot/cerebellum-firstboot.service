@@ -1,7 +1,8 @@
 [Unit]
 Description=Knightykell Cerebellum First Boot
-After=network-online.target
-Wants=network-online.target
+After=local-fs.target network-pre.target
+Wants=network-pre.target
+ConditionPathExists=/opt/cerebellum/firstboot.sh
 
 [Service]
 Type=oneshot
@@ -10,4 +11,3 @@ RemainAfterExit=no
 
 [Install]
 WantedBy=multi-user.target
-

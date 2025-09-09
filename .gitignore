@@ -1,9 +1,5 @@
-*/tools/out/
-*/tools/work/
+*/out/*
+*/work/*
 */firstboot/image.tar
-*/out/armbian-rpi4-cerebellum.img
-*/tools/build_rpi4_armbian_image.sh.bak.*
-*/work/Armbian_24.5.1_Rpi4b_noble_current_6.6.30_minimal.img.xz
-*/work/Armbian_25.8.1_Rpi4b_noble_current_6.12.41_minimal.img
-*/work/Armbian_25.8.1_Rpi4b_noble_current_6.12.41_minimal.img.xz
-*/work/Armbian_25.8.1_Rpi4b_noble_current_6.12.41_minimal.img.xz.sha
+cerebellum-*.img
+cerebellum-*.img.gz

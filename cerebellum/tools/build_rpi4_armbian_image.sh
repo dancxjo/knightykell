@@ -17,6 +17,9 @@ WORK_DIR="${WORK_DIR:-$(pwd)/work}"
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")"/../.. && pwd)}"
 CE_DIR="$REPO_ROOT/cerebellum"
 
+# Desired final image size. Can be overridden via IMG_SIZE (e.g. "16G").
+IMG_SIZE="${IMG_SIZE:-8G}"
+
 echo "[build] Using image: $IMG_URL"
 mkdir -p "$OUT_DIR" "$WORK_DIR"
 
@@ -106,6 +109,29 @@ WORK_IMG="$OUT_DIR/armbian-rpi4-cerebellum.img"
 cp -f "$IMG_FILE" "$WORK_IMG"
 sync
 
+expand_image() {
+  # Expand the raw image file to the desired size before partition/filesystem resize
+  local target_size="$IMG_SIZE"
+  echo "[build] ensuring image size >= $target_size"
+  if command -v stat >/dev/null 2>&1; then
+    local cur_bytes
+    cur_bytes=$(stat -c%s "$WORK_IMG")
+    if command -v numfmt >/dev/null 2>&1; then
+      local want_bytes
+      want_bytes=$(numfmt --from=iec "$target_size" 2>/dev/null || echo 0)
+      if [ -n "$want_bytes" ] && [ "$want_bytes" -gt "$cur_bytes" ]; then
+        truncate -s "$target_size" "$WORK_IMG"
+      fi
+    else
+      truncate -s "$target_size" "$WORK_IMG"
+    fi
+  else
+    truncate -s "$target_size" "$WORK_IMG"
+  fi
+}
+
+expand_image
+
 echo "[build] setting up loop device"
 LOOP=$(sudo losetup --show -fP "$WORK_IMG")
 trap 'sudo losetup -d "$LOOP" || true' EXIT
@@ -119,6 +145,14 @@ BOOT_MNT="$WORK_DIR/mnt_boot"
 ROOT_MNT="$WORK_DIR/mnt_root"
 mkdir -p "$BOOT_MNT" "$ROOT_MNT"
 
+# Grow the root partition and filesystem to fill the expanded image
+echo "[build] expanding root partition and filesystem"
+sudo parted -s "$LOOP" resizepart 2 100%
+sudo partprobe "$LOOP" || true
+sudo sleep 1
+sudo e2fsck -f -y "$ROOT_PART" >/dev/null 2>&1 || true
+sudo resize2fs "$ROOT_PART"
+
 echo "[build] mounting partitions"
 sudo mount "$BOOT_PART" "$BOOT_MNT"
 sudo mount "$ROOT_PART" "$ROOT_MNT"
@@ -128,7 +162,10 @@ echo "[build] injecting cerebellum payload"
 sudo mkdir -p "$ROOT_MNT/opt/cerebellum"
 sudo rsync -a --delete "$CE_DIR/docker/" "$ROOT_MNT/opt/cerebellum/docker/"
 sudo install -m 0755 "$CE_DIR/firstboot/firstboot.sh" "$ROOT_MNT/opt/cerebellum/firstboot.sh"
+sudo mkdir -p "$ROOT_MNT/opt/cerebellum/firstboot"
+sudo rsync -a --delete "$CE_DIR/firstboot/" "$ROOT_MNT/opt/cerebellum/firstboot/"
 sudo install -m 0644 "$CE_DIR/firstboot/cerebellum-firstboot.service" "$ROOT_MNT/etc/systemd/system/cerebellum-firstboot.service"
+sudo install -m 0644 "$CE_DIR/firstboot/cerebellum-docker.service" "$ROOT_MNT/etc/systemd/system/cerebellum-docker.service"
 sudo mkdir -p "$ROOT_MNT/opt/cerebellum/oled"
 sudo rsync -a --delete "$CE_DIR/host/oled/" "$ROOT_MNT/opt/cerebellum/oled/"
 sudo install -m 0644 "$CE_DIR/firstboot/oled-statusd.service" "$ROOT_MNT/etc/systemd/system/oled-statusd.service"
@@ -138,6 +175,8 @@ echo "[build] enabling firstboot and oled services"
 sudo mkdir -p "$ROOT_MNT/etc/systemd/system/multi-user.target.wants"
 sudo ln -sf ../cerebellum-firstboot.service \
   "$ROOT_MNT/etc/systemd/system/multi-user.target.wants/cerebellum-firstboot.service"
+sudo ln -sf ../cerebellum-docker.service \
+  "$ROOT_MNT/etc/systemd/system/multi-user.target.wants/cerebellum-docker.service"
 sudo mkdir -p "$ROOT_MNT/etc/systemd/system/basic.target.wants"
 sudo ln -sf ../oled-statusd.service \
   "$ROOT_MNT/etc/systemd/system/basic.target.wants/oled-statusd.service"

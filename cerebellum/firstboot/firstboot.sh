@@ -18,16 +18,67 @@ elif [ -f /boot/armbianEnv.txt ]; then
   fi
 fi
 
-echo "[firstboot] enabling I2C and installing deps + docker"
-apt-get update
-apt-get install -y --no-install-recommends \
-  i2c-tools python3 python3-pil python3-luma.oled \
-  docker.io docker-compose-plugin
+echo "[firstboot] enabling I2C and installing deps + docker (if needed)"
 echo i2c-dev > /etc/modules-load.d/i2c-dev.conf
-if [ -f /boot/armbianEnv.txt ] && ! grep -q '^overlays=.*i2c' /boot/armbianEnv.txt; then
-  echo 'overlays=i2c1 i2c0' >> /boot/armbianEnv.txt || true
+
+# Enable I2C for Armbian via overlays, or Raspberry Pi OS via config.txt
+if [ -f /boot/armbianEnv.txt ]; then
+  if ! grep -q '^overlays=.*i2c' /boot/armbianEnv.txt; then
+    echo 'overlays=i2c1 i2c0' >> /boot/armbianEnv.txt || true
+  fi
+elif [ -f /boot/config.txt ]; then
+  if ! grep -Eq '^(dtparam=i2c_arm=on|dtoverlay=i2c1)' /boot/config.txt; then
+    echo 'dtparam=i2c_arm=on' >> /boot/config.txt || true
+  fi
 fi
-systemctl enable --now docker
+
+# Install only if docker is not already present (speeds up first boot if pre-baked)
+if ! command -v docker >/dev/null 2>&1; then
+  apt-get update
+  apt-get install -y --no-install-recommends \
+    ca-certificates curl gnupg \
+    i2c-tools python3 python3-pil python3-luma.oled \
+    python3-pip
+  # Add Docker CE repo to get compose plugin if not present
+  install -m 0755 -d /etc/apt/keyrings
+  if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
+    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || true
+    chmod a+r /etc/apt/keyrings/docker.gpg || true
+  fi
+  if [ ! -f /etc/apt/sources.list.d/docker.list ]; then
+    arch=$(dpkg --print-architecture)
+    codename=$( . /etc/os-release; echo "$VERSION_CODENAME" )
+    echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian ${codename} stable" > /etc/apt/sources.list.d/docker.list || true
+  fi
+  apt-get update || true
+  # Prefer docker-ce + compose plugin; fallback to docker.io or pip
+  if ! apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then
+    apt-get install -y --no-install-recommends docker.io || true
+    apt-get install -y --no-install-recommends docker-compose-plugin || pip3 install --no-cache-dir docker-compose || true
+  fi
+  systemctl enable --now docker || true
+else
+  # Ensure OLED libs present even if docker is preinstalled
+  apt-get update
+  apt-get install -y --no-install-recommends i2c-tools python3 python3-pil python3-luma.oled || true
+  # Ensure compose present in some form
+  if ! docker compose version >/dev/null 2>&1 && ! command -v docker-compose >/dev/null 2>&1; then
+    install -m 0755 -d /etc/apt/keyrings
+    if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
+      curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || true
+      chmod a+r /etc/apt/keyrings/docker.gpg || true
+    fi
+    if [ ! -f /etc/apt/sources.list.d/docker.list ]; then
+      arch=$(dpkg --print-architecture)
+      codename=$( . /etc/os-release; echo "$VERSION_CODENAME" )
+      echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian ${codename} stable" > /etc/apt/sources.list.d/docker.list || true
+      apt-get update || true
+    fi
+    apt-get install -y --no-install-recommends docker-compose-plugin || pip3 install --no-cache-dir docker-compose || true
+  fi
+  systemctl enable --now docker || true
+fi
+
 usermod -aG docker ${SUDO_USER:-${USER:-root}} || true
 
 # Restart OLED daemon if present (to pick up luma libs)
@@ -39,8 +90,13 @@ if [ -f /opt/cerebellum/image.tar ]; then
   docker load -i /opt/cerebellum/image.tar || true
 fi
 
-echo "[firstboot] bringing up compose"
-cd /opt/cerebellum/docker
-docker compose -f compose.yml up -d
+echo "[firstboot] enabling and starting cerebellum-docker.service"
+# Ensure compose wrapper is executable
+chmod +x /opt/cerebellum/docker/compose_*.sh 2>/dev/null || true
+systemctl enable cerebellum-docker.service || true
+if ! systemctl start cerebellum-docker.service; then
+  echo "[firstboot] service start failed; running compose directly as fallback"
+  /opt/cerebellum/docker/compose_up.sh || true
+fi
 
 echo "[firstboot] done at $(date -Is)"

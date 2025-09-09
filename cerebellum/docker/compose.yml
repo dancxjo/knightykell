@@ -10,11 +10,43 @@ services:
     environment:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/entry/cyclonedds.xml
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /dev:/dev
       - /run/oled:/run/oled
       - ros_logs:/var/log/ros2
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
+      - /dev/ttyUSB0:/dev/ttyUSB0
+    device_cgroup_rules:
+      - 'c 166:* rw' # ttyACM*
+      - 'c 188:* rw' # ttyUSB*
+
+  neo4j:
+    image: neo4j:5
+    container_name: neo4j
+    restart: unless-stopped
+    environment:
+      - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/test1234}
+      # Uncomment to enable APOC if needed
+      # - NEO4JLABS_PLUGINS=["apoc"]
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"  # REST
+      - "6334:6334"  # gRPC
+    volumes:
+      - qdrant_storage:/qdrant/storage
     # Optionally constrain resources on Pi
     deploy:
       resources:
@@ -23,3 +55,6 @@ services:
           memory: 2G
 volumes:
   ros_logs:
+  neo4j_data:
+  neo4j_logs:
+  qdrant_storage:
