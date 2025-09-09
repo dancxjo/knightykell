@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     git curl ca-certificates tzdata \
     python3-pip python3-colcon-common-extensions python3-vcstool \
     build-essential cmake \
-    python3-pil fonts-dejavu-core \
+    python3-pil fonts-noto-core fonts-noto-extra fonts-noto-mono fonts-noto-color-emoji \
     openssh-server \
     # (nice to have if you're using I²C / luma)
     python3-smbus i2c-tools python3-luma.oled \

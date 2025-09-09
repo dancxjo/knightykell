@@ -85,27 +85,20 @@ class OLED:
         self.font_small = None
         self.font_header = None
         self.font_tiny = None
+        self.font_footer = None
+        self.font_ticker = None
         font_path_env = os.environ.get("OLED_FONT")
         candidate_fonts = []
         if font_path_env:
             candidate_fonts.append(font_path_env)
+        # Prefer Noto families exclusively for consistent glyph coverage
         candidate_fonts += [
-            # Lato (clean sans)
-            "/usr/share/fonts/truetype/lato/Lato-Regular.ttf",
-            "/usr/share/fonts/truetype/lato/Lato-Bold.ttf",
-            # Noto (broad glyph coverage, good hinting)
             "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
             "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
             "/usr/share/fonts/truetype/noto/NotoSansMono-Regular.ttf",
-            # Fira Code (mono) as a crisp option if present
-            "/usr/share/fonts/opentype/firacode/FiraCode-Regular.otf",
-            "/usr/share/fonts/truetype/firacode/FiraCode-Regular.ttf",
-            # DejaVu fallbacks
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-            "/usr/share/fonts/truetype/unifont/unifont.ttf",
-            "/usr/share/fonts/opentype/unifont/unifont.otf",
+            "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
         ]
         # Slightly smaller body font for more room; override with OLED_FONT_SIZE
         font_size = 12
@@ -144,18 +137,18 @@ class OLED:
             except Exception:
                 self.font_header = self.font_small
 
-        # If header may contain Shavian code points, prefer Unifont for coverage
+        # If header may contain Shavian code points, prefer Noto Sans Shavian for coverage
         try:
-            unifont_paths = [
-                "/usr/share/fonts/truetype/unifont/unifont.ttf",
-                "/usr/share/fonts/opentype/unifont/unifont.otf",
+            shavian_paths = [
+                "/usr/share/fonts/truetype/noto/NotoSansShavian-Regular.ttf",
+                "/usr/share/fonts/truetype/noto/NotoSansShavian.ttf",
             ]
-            for up in unifont_paths:
+            for up in shavian_paths:
                 if os.path.isfile(up):
-                    self.font_unifont = ImageFont.truetype(up, size=header_size)
+                    self.font_shavian = ImageFont.truetype(up, size=header_size)
                     break
         except Exception:
-            self.font_unifont = None
+            self.font_shavian = None
 
         # Tiny font for top-right logo
         tiny_size = max(8, min(10, font_size - 2))
@@ -168,6 +161,38 @@ class OLED:
                 continue
         if self.font_tiny is None:
             self.font_tiny = self.font_small
+
+        # Footer font (smaller to fit more info on one line)
+        try:
+            footer_size = max(8, int(os.environ.get("OLED_FOOTER_SIZE", "10")))
+        except Exception:
+            footer_size = max(8, (self.line_height - 2))
+        self.font_footer = None
+        for fp in candidate_fonts:
+            try:
+                if os.path.isfile(fp):
+                    self.font_footer = ImageFont.truetype(fp, size=footer_size)
+                    break
+            except Exception:
+                continue
+        if self.font_footer is None:
+            self.font_footer = self.font_tiny or self.font_small
+
+        # Ticker font (slightly smaller for three-line ticker)
+        try:
+            ticker_size = max(9, int(os.environ.get("OLED_TICKER_SIZE", str(max(9, int(self.line_height-1))))) )
+        except Exception:
+            ticker_size = max(9, int(self.line_height-1))
+        self.font_ticker = None
+        for fp in candidate_fonts:
+            try:
+                if os.path.isfile(fp):
+                    self.font_ticker = ImageFont.truetype(fp, size=ticker_size)
+                    break
+            except Exception:
+                continue
+        if self.font_ticker is None:
+            self.font_ticker = self.font_small
 
         # derive a reasonable line height for layout
         self.line_height = 10
@@ -185,10 +210,17 @@ class OLED:
             except Exception:
                 return d
         self.ticker_enabled = os.environ.get("OLED_TICKER", "1").lower() in ("1", "true", "yes", "on")
-        self.ticker_speed = _get_int("OLED_TICKER_SPEED", 2)  # pixels per frame (~0.5s)
+        self.ticker_speed = _get_int("OLED_TICKER_SPEED", 5)  # pixels per frame
         self._ticker_text = ""
         self._ticker_width = 0
         self._ticker_pos = 0
+        # multi-line ticker
+        self.ticker_lines = _get_int("OLED_TICKER_LINES", 3)
+        # frame delay (seconds)
+        try:
+            self.frame_delay = float(os.environ.get("OLED_FRAME_DELAY", "0.25"))
+        except Exception:
+            self.frame_delay = 0.25
 
         self._try_init()
 
@@ -283,17 +315,17 @@ class OLED:
         self.draw.rectangle((0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
         self._display_frame()
 
-    def _text_width(self, text: str) -> int:
+    def _text_width(self, text: str, font=None) -> int:
         try:
             # Pillow 8.0+: ImageFont.getlength via ImageDraw.textlength
             if hasattr(self.draw, 'textlength'):
-                return int(self.draw.textlength(text, font=self.font_small))
+                return int(self.draw.textlength(text, font=(font or self.font_small)))
             # Fallback: bbox width
-            bbox = self.draw.textbbox((0,0), text, font=self.font_small)
+            bbox = self.draw.textbbox((0,0), text, font=(font or self.font_small))
             return max(0, bbox[2] - bbox[0])
         except Exception:
             try:
-                w, _ = self.draw.textsize(text, font=self.font_small)
+                w, _ = self.draw.textsize(text, font=(font or self.font_small))
                 return int(w)
             except Exception:
                 return len(text) * 6
@@ -309,7 +341,7 @@ class OLED:
         # Top-right tiny logo
         try:
             # Include Shavian namer dot (·) to mark a proper name
-            logo = os.environ.get("OLED_LOGO_TEXT", "\u00B7Knightykell")
+            logo = os.environ.get("OLED_LOGO_TEXT", "\u00B7𐑯𐑲𐑑𐑦𐑒𐑧𐑤")
             if logo and self.font_tiny:
                 lw = int(self.draw.textlength(logo, font=self.font_tiny)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), logo, font=self.font_tiny)[2]
                 self.draw.text((DISPLAY_WIDTH - lw - 1, 0), logo, font=self.font_tiny, fill=255)
@@ -328,9 +360,9 @@ class OLED:
             # Header slightly darker/bolder: use header font (or Unifont if Shavian), and overdraw once for weight
             use_font = self.font_header or self.font_small
             try:
-                # If header contains Shavian block, prefer Unifont for coverage
-                if any(0x10450 <= ord(ch) <= 0x1047F for ch in header) and getattr(self, 'font_unifont', None):
-                    use_font = self.font_unifont
+                # If header contains Shavian block, prefer Noto Sans Shavian for coverage
+                if any(0x10450 <= ord(ch) <= 0x1047F for ch in header) and getattr(self, 'font_shavian', None):
+                    use_font = self.font_shavian
             except Exception:
                 pass
             try:
@@ -357,17 +389,34 @@ class OLED:
         # Update ticker metrics/state if content changed
         if text != self._ticker_text:
             self._ticker_text = text
-            self._ticker_width = self._text_width(text)
+            self._ticker_width = self._text_width(text, font=self.font_ticker or self.font_small)
             # Start just off the right edge for smooth entry
             self._ticker_pos = DISPLAY_WIDTH
-        # Draw scrolling text on the second line (below header)
+        # Draw scrolling text across multiple lines using a smaller ticker font
         x = DISPLAY_WIDTH - self._ticker_pos
+        # compute ticker line height
         try:
-            self.draw.text((x, y), text, font=self.font_small, fill=255)
+            tbbox = (self.font_ticker or self.font_small).getbbox("Ag")
+            ticker_lh = (tbbox[3] - tbbox[1]) + 2
         except Exception:
-            pass
+            ticker_lh = self.line_height
+        # Reserve space for footer at bottom
+        footer_font = self.font_footer or self.font_small
+        try:
+            fb = footer_font.getbbox("Ag")
+            footer_lh = (fb[3] - fb[1]) + 2
+        except Exception:
+            footer_lh = self.line_height
+        max_y = DISPLAY_HEIGHT - footer_lh - 1
+        lines_avail = max(1, min(self.ticker_lines, max(0, (max_y - y)) // ticker_lh))
+        for i in range(lines_avail):
+            yy = y + i * ticker_lh
+            try:
+                self.draw.text((x, yy), text, font=(self.font_ticker or self.font_small), fill=255)
+            except Exception:
+                pass
 
-        # Footer: clock and IP address on bottom two lines
+        # Footer: clock + hostname + IP on a single bottom line (smaller font)
         try:
             now = datetime.now().strftime(os.environ.get("OLED_CLOCK_FMT", "%H:%M:%S"))
             ip_v4, ssid, rssi = get_ip_info()
@@ -379,21 +428,36 @@ class OLED:
                 if "/" in first:
                     first = first.split("/", 1)[0]
                 ip_short = first
-            # compute y positions from bottom
-            lh = self.line_height
-            y_ip = DISPLAY_HEIGHT - lh
-            y_clk = DISPLAY_HEIGHT - (2 * lh)
+            # compute y position bottom line
+            y_footer = DISPLAY_HEIGHT - (footer_lh)
             # clear footer area to avoid overdraw artifacts
-            self.draw.rectangle((0, y_clk - 1, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
-            # Draw clock (left) and ssid or RSSI (right)
-            self.draw.text((0, y_clk), now, font=self.font_small, fill=255)
+            self.draw.rectangle((0, y_footer - 1, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
+            # Left: clock
+            self.draw.text((0, y_footer), now, font=footer_font, fill=255)
+            # Right: IP or SSID
             right_text = ip_short or ssid or ""
             if right_text:
                 try:
-                    rw = int(self.draw.textlength(right_text, font=self.font_small)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), right_text, font=self.font_small)[2]
+                    rw = int(self.draw.textlength(right_text, font=footer_font)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), right_text, font=footer_font)[2]
                 except Exception:
                     rw = len(right_text) * 6
-                self.draw.text((DISPLAY_WIDTH - rw, y_ip), right_text, font=self.font_small, fill=255)
+                self.draw.text((DISPLAY_WIDTH - rw, y_footer), right_text, font=footer_font, fill=255)
+            # Center: hostname (trim to available gap)
+            try:
+                host = os.uname().nodename
+                gap_left = self._text_width(now, font=footer_font)
+                gap_right = self._text_width(right_text, font=footer_font) if right_text else 0
+                max_mid = max(0, DISPLAY_WIDTH - gap_left - gap_right - 6)
+                if max_mid > 0:
+                    show = host
+                    # crude trim to fit
+                    while self._text_width(show, font=footer_font) > max_mid and len(show) > 1:
+                        show = show[:-1]
+                    if show:
+                        mw = self._text_width(show, font=footer_font)
+                        self.draw.text(((DISPLAY_WIDTH - mw)//2, y_footer), show, font=footer_font, fill=255)
+            except Exception:
+                pass
         except Exception:
             pass
         self._display_frame()
@@ -572,13 +636,13 @@ class StatusDaemon:
             "offline": "⚫",
             "failed": "❌",
         }.get(state, "ℹ️")
-        lines = [f"State: {state}"]
+        lines = [f"𐑕𐑑𐑱𐑑: {state}"]
         if failed:
             parts = failed.split()
-            lines.append(f"Failed: {len(parts)}")
+            lines.append(f"𐑓𐑱𐑤𐑛: {len(parts)}")
             for u in parts[:2]:
                 lines.append(f"✗ {u}")
-        return (f"SYSTEM {icon}", lines)
+        return (f"𐑕𐑦𐑕𐑑𐑩𐑥 {icon}", lines)
 
     def _dmesg_tail(self):
         return self._cached(
@@ -609,7 +673,9 @@ class StatusDaemon:
     def _render_current_page(self):
         pages = [self._page_overview, self._page_systemd, self._page_dmesg, self._page_journal]
         now = time.monotonic()
-        if (now - self._last_page_ts) > self.page_interval:
+        # honor dynamic minimum interval (e.g., allow full ticker pass)
+        min_interval = max(getattr(self, 'dynamic_min_interval', 0.0), self.page_interval)
+        if (now - self._last_page_ts) > min_interval:
             self.page_index = (self.page_index + 1) % len(pages)
             self._last_page_ts = now
         return pages[self.page_index]()
@@ -623,6 +689,13 @@ class StatusDaemon:
                 if ov:
                     header, lines = ov.get("header", ""), ov.get("lines", [])
                 else:
+                    # adjust dynamic minimum page interval to allow full ticker pass
+                    try:
+                        # estimated time for a full ticker cycle
+                        cycle = (self.oled._ticker_width + DISPLAY_WIDTH + 10) / max(1, int(self.oled.ticker_speed))
+                        self.dynamic_min_interval = max(2.0, cycle * max(0.05, float(getattr(self.oled, 'frame_delay', 0.25))))
+                    except Exception:
+                        self.dynamic_min_interval = 0.0
                     header, lines = self._render_current_page()
 
             try:
@@ -645,7 +718,8 @@ class StatusDaemon:
                 os.replace(tmp, STATUS_PATH)
             except Exception:
                 pass
-            time.sleep(0.5)
+            # frame delay for smoother/faster ticker
+            time.sleep(getattr(self.oled, 'frame_delay', 0.25))
 
     def receiver_loop(self):
         while not self.stop_event.is_set():

@@ -4,6 +4,7 @@ Wants=systemd-udev-settle.service
 After=local-fs.target systemd-udev-settle.service
 # Ensure root grows before firstboot and Docker bring-up
 Before=cerebellum-firstboot.service docker.service
+RequiresMountsFor=/
 
 [Service]
 Type=oneshot
@@ -11,6 +12,9 @@ ExecStart=/usr/local/sbin/cerebellum-growroot.sh
 ExecStartPost=/bin/systemctl disable --now cerebellum-growroot.service
 RemainAfterExit=no
 ConditionPathExists=!/var/lib/cerebellum/growroot.done
+StandardOutput=journal
+StandardError=journal
+TimeoutSec=120
 
 [Install]
 WantedBy=multi-user.target
