@@ -142,9 +142,9 @@ sudo ln -sf ../cerebellum-firstboot.service \
   "$ROOT_MNT/etc/systemd/system/multi-user.target.wants/cerebellum-firstboot.service"
 sudo ln -sf ../cerebellum-docker.service \
   "$ROOT_MNT/etc/systemd/system/multi-user.target.wants/cerebellum-docker.service"
-sudo mkdir -p "$ROOT_MNT/etc/systemd/system/basic.target.wants"
+sudo mkdir -p "$ROOT_MNT/etc/systemd/system/sysinit.target.wants"
 sudo ln -sf ../oled-statusd.service \
-  "$ROOT_MNT/etc/systemd/system/basic.target.wants/oled-statusd.service"
+  "$ROOT_MNT/etc/systemd/system/sysinit.target.wants/oled-statusd.service"
 
 # Install growroot one-shot to ensure full card utilization on first boot
 sudo install -m 0755 "$CE_DIR/firstboot/cerebellum-growroot.sh" "$ROOT_MNT/usr/local/sbin/cerebellum-growroot.sh"

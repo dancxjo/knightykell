@@ -19,9 +19,11 @@ services:
     devices:
       - /dev/ttyACM0:/dev/ttyACM0
       - /dev/ttyUSB0:/dev/ttyUSB0
+      - /dev/video0:/dev/video0
     device_cgroup_rules:
       - 'c 166:* rw' # ttyACM*
       - 'c 188:* rw' # ttyUSB*
+      - 'c 81:* rw'  # video*
 
   neo4j:
     image: neo4j:5

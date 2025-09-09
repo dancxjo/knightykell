@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-robot-localization \
     ros-${ROS_DISTRO}-imu-filter-madgwick \
     ros-${ROS_DISTRO}-v4l2-camera \
+    ros-${ROS_DISTRO}-image-view \
     ros-${ROS_DISTRO}-hls-lfcd-lds-driver \
     ros-${ROS_DISTRO}-diagnostic-updater \
     && rm -rf /var/lib/apt/lists/*
@@ -52,6 +53,7 @@ COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 COPY docker/bringup.sh /opt/entry/bringup.sh
 RUN chmod +x /opt/entry/bringup.sh
+COPY docker/camera_info.yaml /opt/entry/camera_info.yaml
 COPY host/oled/oled_client.py /opt/entry/oled_client.py
 RUN chmod +x /opt/entry/oled_client.py
 COPY docker/ros2_oled_bridge.py /opt/entry/ros2_oled_bridge.py

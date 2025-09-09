@@ -177,9 +177,9 @@ sudo ln -sf ../cerebellum-firstboot.service \
   "$ROOT_MNT/etc/systemd/system/multi-user.target.wants/cerebellum-firstboot.service"
 sudo ln -sf ../cerebellum-docker.service \
   "$ROOT_MNT/etc/systemd/system/multi-user.target.wants/cerebellum-docker.service"
-sudo mkdir -p "$ROOT_MNT/etc/systemd/system/basic.target.wants"
+sudo mkdir -p "$ROOT_MNT/etc/systemd/system/sysinit.target.wants"
 sudo ln -sf ../oled-statusd.service \
-  "$ROOT_MNT/etc/systemd/system/basic.target.wants/oled-statusd.service"
+  "$ROOT_MNT/etc/systemd/system/sysinit.target.wants/oled-statusd.service"
 
 # Enable I2C overlays for Armbian (armbianEnv.txt)
 if [ -f "$ROOT_MNT/boot/armbianEnv.txt" ]; then

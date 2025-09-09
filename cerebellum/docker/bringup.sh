@@ -71,8 +71,9 @@ if [ -e /dev/video0 ] && ros2 pkg list | grep -q '^v4l2_camera$'; then
   echo "[bringup] launching v4l2_camera on /dev/video0"
   oled NODE "v4l2_camera"
   nohup ros2 run v4l2_camera v4l2_camera_node --ros-args \
-    -p video_device:=/dev/video0 -p image_size:='[1280,1024]' -p pixel_format:=MJPG \
-    -p output_encoding:=bgr8 -p frame_rate:=30 -p use_sensor_data_qos:=true \
+    -p video_device:=/dev/video0 \
+    -p image_size:='[1280,720]' -p pixel_format:=MJPG -p output_encoding:=bgr8 -p frame_rate:=30 \
+    -p use_sensor_data_qos:=true -p camera_name:=usb_cam -p camera_info_url:=file:///opt/entry/camera_info.yaml \
     > "$LOGDIR/cam1.log" 2>&1 &
 fi
 

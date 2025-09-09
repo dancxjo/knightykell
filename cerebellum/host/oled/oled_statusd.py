@@ -402,6 +402,8 @@ class StatusDaemon:
 
         # cache for expensive calls
         self._cache = {}
+        # Boot journal follow toggle
+        self.boot_journal = os.environ.get("OLED_BOOT_JOURNAL", "1").lower() in ("1", "true", "yes", "on")
 
     def shutdown(self):
         self.stop_event.set()
@@ -597,6 +599,58 @@ class StatusDaemon:
                     "expires": time.monotonic() + 8.0,
                 }
 
+    def journal_boot_loop(self):
+        if not self.boot_journal:
+            return
+        # Follow overall systemd journal during boot and render the latest lines
+        cmd = [
+            "bash", "-lc",
+            "journalctl -b -f --no-pager -o short 2>/dev/null"
+        ]
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+        except Exception:
+            return
+        last_lines = []
+        last_set = 0.0
+        while not self.stop_event.is_set():
+            # stop condition: system reaches running or degraded
+            st = self._systemd_summary() or ("", "")
+            state = st[0] if isinstance(st, tuple) else ""
+            if state in ("running", "degraded") and (time.monotonic() - self._last_page_ts) > 10:
+                break
+            try:
+                ln = (proc.stdout.readline() if proc.stdout else "")
+            except Exception:
+                break
+            if not ln:
+                time.sleep(0.05)
+                continue
+            ln = ln.strip()
+            if not ln:
+                continue
+            # Prefer systemd messages; otherwise include occasionally
+            show = ("systemd[" in ln) or ("systemd " in ln) or ((time.monotonic() - last_set) > 2.0)
+            if not show:
+                continue
+            # Keep the last 3 trimmed lines
+            if ";" in ln:
+                ln = ln.split(";", 1)[-1].strip()
+            last_lines.append(ln[:50])
+            last_lines = last_lines[-3:]
+            with self.lock:
+                self.overlay = {
+                    "header": "BOOT",
+                    "lines": last_lines[-2:] if len(last_lines) > 1 else last_lines,
+                    "expires": time.monotonic() + 3.0,
+                }
+            last_set = time.monotonic()
+        try:
+            if proc and proc.poll() is None:
+                proc.terminate()
+        except Exception:
+            pass
+
     def run(self):
         def on_sig(signum, frame):
             self.shutdown()
@@ -606,8 +660,9 @@ class StatusDaemon:
         t1 = threading.Thread(target=self.sender_loop, daemon=True)
         t2 = threading.Thread(target=self.receiver_loop, daemon=True)
         t3 = threading.Thread(target=self.journal_alerts_loop, daemon=True)
-        t1.start(); t2.start(); t3.start()
-        t1.join(); t2.join(); t3.join()
+        t4 = threading.Thread(target=self.journal_boot_loop, daemon=True)
+        t1.start(); t2.start(); t3.start(); t4.start()
+        t1.join(); t2.join(); t3.join(); t4.join()
 
 
 def main():
