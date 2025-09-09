@@ -181,6 +181,12 @@ sudo mkdir -p "$ROOT_MNT/etc/systemd/system/basic.target.wants"
 sudo ln -sf ../oled-statusd.service \
   "$ROOT_MNT/etc/systemd/system/basic.target.wants/oled-statusd.service"
 
+# Install growroot one-shot (harmless if already at max size)
+sudo install -m 0755 "$CE_DIR/firstboot/cerebellum-growroot.sh" "$ROOT_MNT/usr/local/sbin/cerebellum-growroot.sh"
+sudo install -m 0644 "$CE_DIR/firstboot/cerebellum-growroot.service" "$ROOT_MNT/etc/systemd/system/cerebellum-growroot.service"
+sudo ln -sf ../cerebellum-growroot.service \
+  "$ROOT_MNT/etc/systemd/system/multi-user.target.wants/cerebellum-growroot.service"
+
 # Optionally seed timezone and SSH (Armbian normally handles first login; skip here)
 
 echo "[build] unmounting and finalizing"

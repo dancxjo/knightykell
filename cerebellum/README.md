@@ -65,6 +65,12 @@ QEMU test run (experimental)
   - Uses the Pi OS `kernel8.img` and a Pi 3 DTB from the image; boots with `-M raspi3b` and SD card emulation.
   - Notes: QEMU’s Raspberry Pi emulation is limited; networking and peripherals may not match real hardware.
 
+Storage growth
+- Some upstream images auto-expand the rootfs using `resize2fs_once`. Our build expands the image during creation and also installs a one-shot `cerebellum-growroot.service` that grows the partition/filesystem on first boot to fill the actual SD card.
+- Manually install/enable on an existing system if needed:
+  - `make install-growroot && make enable-growroot`
+  - Or run once by hand: `sudo growpart /dev/mmcblk0 2 && sudo resize2fs /dev/mmcblk0p2` (install `cloud-guest-utils` first).
+
 Web dashboard
 - URL: `http://<robot-ip>:8080/` (auto-refreshing HTML) and `http://<robot-ip>:8080/api/status` (JSON)
 - Shows node/topic counts, rates for `/odom`, `/imu/data`, `/scan`, `/camera/image_raw`, and lifecycle states for common Nav2 nodes.

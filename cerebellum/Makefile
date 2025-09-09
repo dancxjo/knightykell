@@ -48,6 +48,22 @@ rpios-img:
 	cd tools && ./build_rpi4_rpios_image.sh
 	@echo "Image built: $(IMG_OUT)"
 
+.PHONY: install-growroot enable-growroot
+install-growroot:
+	$(SUDO) install -m 0755 firstboot/cerebellum-growroot.sh /usr/local/sbin/cerebellum-growroot.sh
+	$(SUDO) install -m 0644 firstboot/cerebellum-growroot.service /etc/systemd/system/cerebellum-growroot.service
+	@echo "Installed cerebellum-growroot. Enable with: make enable-growroot"
+
+enable-growroot:
+	$(SUDO) systemctl enable --now cerebellum-growroot.service
+	@echo "Growroot enabled (will run once). Check: systemctl status cerebellum-growroot.service"
+
+.PHONY: enable-i2c
+enable-i2c:
+	@echo "Enabling I2C (persistently); will modprobe now and require reboot for overlays"
+	chmod +x tools/enable_i2c.sh
+	SUDO=$(SUDO) ./tools/enable_i2c.sh
+
 qemu-rpios:
 	@echo "Launching QEMU with $(IMG_OUT) (best-effort Pi3 emulation)"
 	tools/run_rpios_qemu.sh "$(IMG_OUT)"

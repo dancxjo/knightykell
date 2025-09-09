@@ -1,0 +1,15 @@
+[Unit]
+Description=Cerebellum Grow Root Partition and Filesystem (once)
+Wants=systemd-udev-settle.service
+After=systemd-udev-settle.service local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cerebellum-growroot.sh
+ExecStartPost=/bin/systemctl disable --now cerebellum-growroot.service
+RemainAfterExit=no
+ConditionPathExists=!/var/lib/cerebellum/growroot.done
+
+[Install]
+WantedBy=multi-user.target
+

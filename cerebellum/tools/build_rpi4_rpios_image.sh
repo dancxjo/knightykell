@@ -146,6 +146,12 @@ sudo mkdir -p "$ROOT_MNT/etc/systemd/system/basic.target.wants"
 sudo ln -sf ../oled-statusd.service \
   "$ROOT_MNT/etc/systemd/system/basic.target.wants/oled-statusd.service"
 
+# Install growroot one-shot to ensure full card utilization on first boot
+sudo install -m 0755 "$CE_DIR/firstboot/cerebellum-growroot.sh" "$ROOT_MNT/usr/local/sbin/cerebellum-growroot.sh"
+sudo install -m 0644 "$CE_DIR/firstboot/cerebellum-growroot.service" "$ROOT_MNT/etc/systemd/system/cerebellum-growroot.service"
+sudo ln -sf ../cerebellum-growroot.service \
+  "$ROOT_MNT/etc/systemd/system/multi-user.target.wants/cerebellum-growroot.service"
+
 # Optimize boot: keep WiFi (wpa_supplicant + dhcpcd) but mask some slow services if present
 mask_unit() {
   local unit="$1"
