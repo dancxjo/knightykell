@@ -66,3 +66,11 @@ Notes
 - Compose uses host networking for Cyclone DDS; set `ROS_DOMAIN_ID` as needed.
 - `ros2_ws.repos` seeds source-based packages; apt installs cover commonly used drivers.
 - The MPU6050 ROS 2 driver varies; update `ros2_ws.repos` to the implementation you use.
+
+Time sync (NTP)
+- First-boot now enables systemd-timesyncd and waits briefly for sync before starting Docker pulls.
+- The compose service waits for `time-sync.target` and `network-online.target` to reduce TLS/registry failures due to bad clocks.
+- Manual fix if needed:
+  - `timedatectl status`
+  - `sudo timedatectl set-ntp true`
+  - If no WAN, set a one-off reasonable time: `sudo date -s "2025-09-08 23:15:00"`; then NTP will keep it.

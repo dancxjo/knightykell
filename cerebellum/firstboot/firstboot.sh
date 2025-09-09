@@ -36,6 +36,20 @@ elif [ -f /boot/config.txt ]; then
   fi
 fi
 
+# Ensure clock is sane: enable NTP and try to sync early
+echo "[firstboot] enabling NTP time sync"
+apt-get update || true
+apt-get install -y --no-install-recommends systemd-timesyncd || true
+timedatectl set-ntp true || true
+systemctl enable --now systemd-timesyncd.service || true
+# Briefly wait for sync (best-effort, max ~20s)
+for i in $(seq 1 20); do
+  synced=$(timedatectl show -p NTPSynchronized --value 2>/dev/null || echo "no")
+  [ "$synced" = "yes" ] && break
+  sleep 1
+done
+echo "[firstboot] time status: $(timedatectl status | head -n 5 | tr '\n' ' ' )"
+
 # Install only if docker is not already present (speeds up first boot if pre-baked)
 if ! command -v docker >/dev/null 2>&1; then
   apt-get update
