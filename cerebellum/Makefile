@@ -64,6 +64,25 @@ enable-i2c:
 	chmod +x tools/enable_i2c.sh
 	SUDO=$(SUDO) ./tools/enable_i2c.sh
 
+# --- Monitor (laptop dev) helpers ---
+.PHONY: monitor-build monitor-shell monitor-rviz monitor-rqt monitor-down
+monitor-build:
+	docker compose -f monitor/docker/compose.yml build
+
+monitor-shell:
+	docker compose -f monitor/docker/compose.yml run --rm monitor bash
+
+monitor-rviz:
+	chmod +x monitor/run_rviz.sh
+	./monitor/run_rviz.sh
+
+monitor-rqt:
+	chmod +x monitor/run_rqt.sh
+	./monitor/run_rqt.sh
+
+monitor-down:
+	docker compose -f monitor/docker/compose.yml down || true
+
 
 qemu-rpios:
 	@echo "Launching QEMU with $(IMG_OUT) (best-effort Pi3 emulation)"

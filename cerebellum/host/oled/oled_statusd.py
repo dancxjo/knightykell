@@ -81,15 +81,24 @@ class OLED:
         # drawing resources
         self.image = Image.new("1", (DISPLAY_WIDTH, DISPLAY_HEIGHT), 0)
         self.draw = ImageDraw.Draw(self.image)
-        # Prefer a Unicode-capable font if available for emoji/symbols
+        # Prefer clear, readable fonts for small OLEDs
         self.font_small = None
         font_path_env = os.environ.get("OLED_FONT")
         candidate_fonts = []
         if font_path_env:
             candidate_fonts.append(font_path_env)
         candidate_fonts += [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+            # Lato (clean sans)
+            "/usr/share/fonts/truetype/lato/Lato-Regular.ttf",
+            # Noto (broad glyph coverage, good hinting)
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansMono-Regular.ttf",
+            # Fira Code (mono) as a crisp option if present
+            "/usr/share/fonts/opentype/firacode/FiraCode-Regular.otf",
+            "/usr/share/fonts/truetype/firacode/FiraCode-Regular.ttf",
+            # DejaVu fallbacks
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
             "/usr/share/fonts/truetype/unifont/unifont.ttf",
             "/usr/share/fonts/opentype/unifont/unifont.otf",
         ]

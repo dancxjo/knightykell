@@ -1,0 +1,27 @@
+services:
+  monitor:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        ROS_DISTRO: ${ROS_DISTRO:-jazzy}
+    image: knightykell/monitor:${ROS_DISTRO:-jazzy}
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/entry/cyclonedds.xml
+      - DISPLAY
+      - WAYLAND_DISPLAY
+      - XDG_RUNTIME_DIR
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XDG_RUNTIME_DIR:-/run/user/1000}:${XDG_RUNTIME_DIR:-/run/user/1000}
+      - ~/.Xauthority:/root/.Xauthority:ro
+      - ./cyclonedds.xml:/opt/entry/cyclonedds.xml:ro
+      - ros_logs:/var/log/ros2
+    privileged: false
+    ipc: host
+volumes:
+  ros_logs:

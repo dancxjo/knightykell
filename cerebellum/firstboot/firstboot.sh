@@ -51,7 +51,8 @@ if ! command -v docker >/dev/null 2>&1; then
   apt-get update
   apt-get install -y --no-install-recommends \
     ca-certificates curl gnupg \
-    i2c-tools python3 python3-pil python3-luma.oled fonts-unifont fonts-dejavu-core \
+    i2c-tools python3 python3-pil python3-luma.oled \
+    fonts-unifont fonts-dejavu-core fonts-lato fonts-noto-core fonts-noto-mono fonts-firacode \
     python3-pip
   # Add Docker CE repo to get compose plugin if not present
   install -m 0755 -d /etc/apt/keyrings
@@ -75,7 +76,8 @@ else
   # Ensure OLED libs present even if docker is preinstalled
   apt-get update
   apt-get install -y --no-install-recommends \
-    i2c-tools python3 python3-pil python3-luma.oled fonts-unifont fonts-dejavu-core || true
+    i2c-tools python3 python3-pil python3-luma.oled \
+    fonts-unifont fonts-dejavu-core fonts-lato fonts-noto-core fonts-noto-mono fonts-firacode || true
   # Ensure compose present in some form
   if ! docker compose version >/dev/null 2>&1 && ! command -v docker-compose >/dev/null 2>&1; then
     install -m 0755 -d /etc/apt/keyrings
