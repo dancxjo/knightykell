@@ -14,7 +14,8 @@ IMG_OUT ?= cerebellum/out/rpios-rpi4-cerebellum.img
 
 cerebellum-img:
 	@echo "Building Cerebellum (RPi OS Lite, arm64) image into $(IMG_OUT)"
-	cd cerebellum/tools && ./build_rpi4_rpios_image.sh
+	OUT_DIR="$(abspath cerebellum/out)" WORK_DIR="$(abspath cerebellum/work)" \
+	  bash -c 'cd cerebellum/tools && ./build_rpi4_rpios_image.sh'
 	@echo "Image built: $(IMG_OUT)"
 
 cerebellum-cache-clean:
@@ -87,12 +88,12 @@ cerebellum-build:
 # Primary high-level targets
 .PHONY: cerebellum cerebellum-burn monitor
 
-# Build Raspberry Pi OS Lite image for cerebellum
-cerebellum: cerebellum-burn
+# Build Raspberry Pi OS Lite image for cerebellum (build only)
+cerebellum: cerebellum-img
 	@echo "Cerebellum image ready: $(abspath $(IMG_OUT))"
 
-# Launch Raspberry Pi Imager to burn the image
-cerebellum-burn: cerebellum-img
+# Launch Raspberry Pi Imager to burn the image (depends on built image)
+cerebellum-burn: cerebellum
 	@IMG_ABS="$(abspath $(IMG_OUT))"; \
 	if command -v rpi-imager >/dev/null 2>&1; then \
 	  echo "Launching Raspberry Pi Imager..."; rpi-imager >/dev/null 2>&1 & \

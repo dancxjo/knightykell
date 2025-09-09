@@ -30,8 +30,8 @@ ENV ROS_LOG_DIR=/var/log/ros2 \
 
 RUN mkdir -p /var/log/ros2
 
-COPY cyclonedds.xml /opt/entry/cyclonedds.xml
-COPY entrypoint.sh /entrypoint.sh
+COPY docker/cyclonedds.xml /opt/entry/cyclonedds.xml
+COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
