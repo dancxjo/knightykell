@@ -31,12 +31,24 @@ COMMON_BUILD_ARGS = \
 .PHONY: cerebellum-img cerebellum-cache-clean
 
 IMG_OUT ?= cerebellum/out/rpios-rpi4-cerebellum.img
+CEREBELLUM_IMAGE_TAG ?= Knightykell/cerebellum:latest
+CEREBELLUM_INCLUDE_SOURCE ?= 1
 
 cerebellum-img:
 	@echo "Building Cerebellum (RPi OS Lite, arm64) image into $(IMG_OUT)"
+	@IMG_TAR="$(abspath cerebellum/out/cerebellum-image.tar)"; \
+	if command -v docker >/dev/null 2>&1 && docker image inspect "$(CEREBELLUM_IMAGE_TAG)" >/dev/null 2>&1; then \
+	  echo "Preloading container image: $(CEREBELLUM_IMAGE_TAG) -> $$IMG_TAR"; \
+	  mkdir -p "$(abspath cerebellum/out)"; \
+	  docker save "$(CEREBELLUM_IMAGE_TAG)" -o "$$IMG_TAR" || true; \
+	else \
+	  echo "No local image $(CEREBELLUM_IMAGE_TAG) found; skipping preload."; \
+	  IMG_TAR=""; \
+	fi; \
 	OUT_DIR="$(abspath cerebellum/out)" WORK_DIR="$(abspath cerebellum/work)" \
-	  bash -c 'cd cerebellum/tools && ./build_rpi4_rpios_image.sh'
-	@echo "Image built: $(IMG_OUT)"
+	  IMG_PRELOAD_TAR="$$IMG_TAR" INCLUDE_SOURCE="$(CEREBELLUM_INCLUDE_SOURCE)" \
+	  bash -c 'cd cerebellum/tools && ./build_rpi4_rpios_image.sh'; \
+	echo "Image built: $(IMG_OUT)"
 
 cerebellum-cache-clean:
 	rm -f cerebellum/out/cache/rpios_latest.archive || true

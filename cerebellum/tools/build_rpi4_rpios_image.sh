@@ -177,6 +177,27 @@ sudo mkdir -p "$ROOT_MNT/etc/systemd/system/sysinit.target.wants"
 sudo ln -sf ../oled-statusd.service \
   "$ROOT_MNT/etc/systemd/system/sysinit.target.wants/oled-statusd.service"
 
+# Optionally preload Docker image tar into the OS image for first-boot load
+if [ -n "${IMG_PRELOAD_TAR:-}" ] && [ -f "${IMG_PRELOAD_TAR}" ]; then
+  echo "[build] preloading container image tar into /opt/cerebellum/image.tar"
+  sudo install -m 0644 "${IMG_PRELOAD_TAR}" "$ROOT_MNT/opt/cerebellum/image.tar"
+fi
+
+# Optionally include the full repository for convenience (can be large)
+if [ "${INCLUDE_SOURCE:-0}" = "1" ]; then
+  echo "[build] including source at /opt/src/knightykell (excluding large outputs)"
+  sudo mkdir -p "$ROOT_MNT/opt/src/knightykell"
+  sudo rsync -a --delete \
+    --exclude 'cerebellum/out/' \
+    --exclude 'cerebellum/tools/out/' \
+    --exclude 'cerebellum/tools/work/' \
+    --exclude 'monitor/out/' \
+    --exclude '*/__pycache__/' \
+    --exclude '.git/objects/' \
+    "$REPO_ROOT/" "$ROOT_MNT/opt/src/knightykell/"
+  sudo chown -R root:root "$ROOT_MNT/opt/src/knightykell"
+fi
+
 # Install growroot one-shot to ensure full card utilization on first boot
 sudo install -m 0755 "$CE_DIR/firstboot/cerebellum-growroot.sh" "$ROOT_MNT/usr/local/sbin/cerebellum-growroot.sh"
 sudo install -m 0644 "$CE_DIR/firstboot/cerebellum-growroot.service" "$ROOT_MNT/etc/systemd/system/cerebellum-growroot.service"
