@@ -88,11 +88,11 @@ cerebellum-build:
 .PHONY: cerebellum cerebellum-burn monitor
 
 # Build Raspberry Pi OS Lite image for cerebellum
-cerebellum: cerebellum-img
+cerebellum: cerebellum-burn
 	@echo "Cerebellum image ready: $(abspath $(IMG_OUT))"
 
 # Launch Raspberry Pi Imager to burn the image
-cerebellum-burn: cerebellum
+cerebellum-burn: cerebellum-img
 	@IMG_ABS="$(abspath $(IMG_OUT))"; \
 	if command -v rpi-imager >/dev/null 2>&1; then \
 	  echo "Launching Raspberry Pi Imager..."; rpi-imager >/dev/null 2>&1 & \
