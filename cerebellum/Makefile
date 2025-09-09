@@ -67,10 +67,12 @@ enable-i2c:
 # --- Monitor (laptop dev) helpers ---
 .PHONY: monitor-build monitor-shell monitor-rviz monitor-rqt monitor-down
 monitor-build:
-	docker compose -f monitor/docker/compose.yml build
+	$(compose_guard)
+	$(COMPOSE) $(COMPOSE_FILE) build
 
 monitor-shell:
-	docker compose -f monitor/docker/compose.yml run --rm monitor bash
+	$(compose_guard)
+	$(COMPOSE) $(COMPOSE_FILE) run --rm monitor bash
 
 monitor-rviz:
 	chmod +x monitor/run_rviz.sh
@@ -81,12 +83,21 @@ monitor-rqt:
 	./monitor/run_rqt.sh
 
 monitor-down:
-	docker compose -f monitor/docker/compose.yml down || true
+	$(compose_guard)
+	$(COMPOSE) $(COMPOSE_FILE) down || true
 
 
 qemu-rpios:
 	@echo "Launching QEMU with $(IMG_OUT) (best-effort Pi3 emulation)"
 	tools/run_rpios_qemu.sh "$(IMG_OUT)"
+# Compose command autodetect (docker compose, docker-compose, or podman compose)
+COMPOSE ?= $(shell \
+  (command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && echo "docker compose") || \
+  (command -v docker-compose >/dev/null 2>&1 && echo "docker-compose") || \
+  (command -v podman >/dev/null 2>&1 && echo "podman compose") )
+COMPOSE_FILE := -f monitor/docker/compose.yml
+compose_guard = @if [ -z "$(COMPOSE)" ]; then \
+  echo "ERROR: No compose tool found. Install Docker (with compose plugin) or Podman." >&2; exit 127; fi
 
 rpios-run: rpios-img qemu-rpios
 	@true
