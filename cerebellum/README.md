@@ -72,6 +72,7 @@ Notes
 - Compose uses host networking for Cyclone DDS; set `ROS_DOMAIN_ID` as needed.
 - `ros2_ws.repos` seeds source-based packages; apt installs cover commonly used drivers.
 - The MPU6050 ROS 2 driver varies; update `ros2_ws.repos` to the implementation you use.
+- Ensure I2C is enabled on the host: `sudo raspi-config nonint do_i2c 0` or add `dtparam=i2c_arm=on` to `/boot/config.txt` and create `/etc/modules-load.d/i2c-dev.conf` with `i2c-dev`; reboot. Verify with `ls /dev/i2c-*` and `i2cdetect -y 1`.
 
 Time sync (NTP)
 - First-boot now enables systemd-timesyncd and waits briefly for sync before starting Docker pulls.

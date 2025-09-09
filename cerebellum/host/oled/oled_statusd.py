@@ -146,7 +146,7 @@ class OLED:
             except Exception:
                 self.font_header = self.font_small
 
-        # If header may contain Shavian code points, prefer Noto Sans Shavian for coverage
+        # If header/logo may contain Shavian code points, prefer Noto Sans Shavian for coverage
         try:
             shavian_paths = [
                 "/usr/share/fonts/truetype/noto/NotoSansShavian-Regular.ttf",
@@ -187,11 +187,11 @@ class OLED:
         if self.font_footer is None:
             self.font_footer = self.font_tiny or self.font_small
 
-        # Ticker font (slightly smaller for three-line ticker)
+        # Body font for compact three-line display (smaller than body)
         try:
-            ticker_size = max(9, int(os.environ.get("OLED_TICKER_SIZE", str(max(9, int(self.line_height-1))))) )
+            ticker_size = max(8, int(os.environ.get("OLED_TICKER_SIZE", str(max(8, int(self.line_height-2))))) )
         except Exception:
-            ticker_size = max(9, int(self.line_height-1))
+            ticker_size = max(8, int(self.line_height-2))
         self.font_ticker = None
         for fp in candidate_fonts:
             try:
@@ -205,13 +205,13 @@ class OLED:
 
         # line_height already computed above
 
-        # Ticker configuration
+        # Ticker configuration (disabled: we render static three-line body)
         def _get_int(k, d):
             try:
                 return int(os.environ.get(k, d))
             except Exception:
                 return d
-        self.ticker_enabled = os.environ.get("OLED_TICKER", "1").lower() in ("1", "true", "yes", "on")
+        self.ticker_enabled = os.environ.get("OLED_TICKER", "0").lower() in ("1", "true", "yes", "on")
         self.ticker_speed = _get_int("OLED_TICKER_SPEED", 5)  # pixels per frame
         self._ticker_text = ""
         self._ticker_width = 0
@@ -340,13 +340,14 @@ class OLED:
                 return
         self.draw.rectangle((0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
         y = 0
-        # Top-right tiny logo
+        # Top-right tiny logo (use Shavian-capable font when available)
         try:
             # Include Shavian namer dot (·) to mark a proper name
             logo = os.environ.get("OLED_LOGO_TEXT", "\u00B7𐑯𐑲𐑑𐑦𐑒𐑧𐑤")
-            if logo and self.font_tiny:
-                lw = int(self.draw.textlength(logo, font=self.font_tiny)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), logo, font=self.font_tiny)[2]
-                self.draw.text((DISPLAY_WIDTH - lw - 1, 0), logo, font=self.font_tiny, fill=255)
+            font_logo = self.font_shavian or self.font_tiny or self.font_small
+            if logo and font_logo:
+                lw = int(self.draw.textlength(logo, font=font_logo)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), logo, font=font_logo)[2]
+                self.draw.text((DISPLAY_WIDTH - lw - 1, 0), logo, font=font_logo, fill=255)
         except Exception:
             pass
 
@@ -436,28 +437,17 @@ class OLED:
             self.draw.rectangle((0, y_footer - 1, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
             # Left: clock
             self.draw.text((0, y_footer), now, font=footer_font, fill=255)
-            # Right: IP or SSID
-            right_text = ip_short or ssid or ""
+            # Right: Hostname (replace IP display)
+            right_text = os.uname().nodename
             if right_text:
                 try:
                     rw = int(self.draw.textlength(right_text, font=footer_font)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), right_text, font=footer_font)[2]
                 except Exception:
                     rw = len(right_text) * 6
                 self.draw.text((DISPLAY_WIDTH - rw, y_footer), right_text, font=footer_font, fill=255)
-            # Center: hostname (trim to available gap)
+            # Center: leave empty to reduce clutter
             try:
-                host = os.uname().nodename
-                gap_left = self._text_width(now, font=footer_font)
-                gap_right = self._text_width(right_text, font=footer_font) if right_text else 0
-                max_mid = max(0, DISPLAY_WIDTH - gap_left - gap_right - 6)
-                if max_mid > 0:
-                    show = host
-                    # crude trim to fit
-                    while self._text_width(show, font=footer_font) > max_mid and len(show) > 1:
-                        show = show[:-1]
-                    if show:
-                        mw = self._text_width(show, font=footer_font)
-                        self.draw.text(((DISPLAY_WIDTH - mw)//2, y_footer), show, font=footer_font, fill=255)
+                pass
             except Exception:
                 pass
         except Exception:
@@ -474,19 +464,51 @@ class OLED:
             self._try_init()
             if not self.device:
                 return
-        if self.ticker_enabled:
-            return self._render_ticker(header, lines)
-        # Fallback: show at most two lines with larger line spacing
+        # Always render a static three-line view, smaller font
         self.draw.rectangle((0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
         y = 0
+        # Top-right tiny Shavian logo
+        try:
+            logo = os.environ.get("OLED_LOGO_TEXT", "\u00B7𐑯𐑲𐑑𐑦𐑒𐑧𐑤")
+            font_logo = self.font_shavian or self.font_tiny or self.font_small
+            if logo and font_logo:
+                lw = int(self.draw.textlength(logo, font=font_logo)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), logo, font=font_logo)[2]
+                self.draw.text((DISPLAY_WIDTH - lw - 1, 0), logo, font=font_logo, fill=255)
+        except Exception:
+            pass
+        # Header
         if header:
-            self.draw.text((0, y), header[:18], font=self.font_small, fill=255)
-            y += self.line_height
-            self.draw.line((0, y, DISPLAY_WIDTH, y), fill=255)
-            y += 2
-        for ln in (lines or [])[:2]:
-            self.draw.text((0, y), str(ln)[:20], font=self.font_small, fill=255)
-            y += self.line_height
+            try:
+                header_src = header
+                if os.environ.get("OLED_HEADLINE_SHAVIAN", "1").lower() in ("1", "true", "yes", "on"):
+                    try:
+                        header = shavian_transliterate(header)
+                    except Exception:
+                        header = header_src
+                self.draw.text((0, y), header[:18], font=(self.font_header or self.font_small), fill=255)
+                y += max(self.line_height, 11)
+                self.draw.line((0, y, DISPLAY_WIDTH, y), fill=255)
+                y += 1
+            except Exception:
+                pass
+        # Body: up to 3 lines in compact font
+        body_font = self.font_ticker or self.font_small
+        for ln in (lines or [])[:3]:
+            try:
+                self.draw.text((0, y), str(ln)[:21], font=body_font, fill=255)
+            except Exception:
+                pass
+            y += max(9, int(self.line_height - 1))
+        # Footer: hostname only on the right
+        try:
+            host = os.uname().nodename
+            footer_font = self.font_footer or body_font
+            y_footer = DISPLAY_HEIGHT - (max(8, int(self.line_height - 2)))
+            self.draw.rectangle((0, y_footer - 1, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
+            rw = int(self.draw.textlength(host, font=footer_font)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), host, font=footer_font)[2]
+            self.draw.text((DISPLAY_WIDTH - rw, y_footer), host, font=footer_font, fill=255)
+        except Exception:
+            pass
         self._display_frame()
 
 
@@ -601,9 +623,8 @@ class StatusDaemon:
     def _page_overview(self):
         header = self.header
         lines = list(self.lines)
+        # Remove IP address from body content; focus on other info
         ip_v4, ssid, rssi = get_ip_info()
-        if ip_v4:
-            lines.append(ip_v4.split("\n")[0][:21])
         if ssid:
             lines.append(f"📶 {ssid}"[:21])
         if rssi:
