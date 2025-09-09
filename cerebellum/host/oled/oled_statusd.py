@@ -17,11 +17,7 @@ try:
 except Exception as e:
     i2c = sh1106 = ssd1306 = None
 
-# Optional Waveshare e-Paper 4.2" (SPI) support
-try:
-    from waveshare_epd import epd4in2  # type: ignore
-except Exception:
-    epd4in2 = None
+# e-Paper support removed
 
 
 SOCK_DIR = "/run/oled"
@@ -92,13 +88,20 @@ class OLED:
         if font_path_env:
             candidate_fonts.append(font_path_env)
         candidate_fonts += [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/unifont/unifont.ttf",
             "/usr/share/fonts/opentype/unifont/unifont.otf",
         ]
+        font_size = 12
+        try:
+            font_size = int(os.environ.get("OLED_FONT_SIZE", font_size))
+        except Exception:
+            pass
         for fp in candidate_fonts:
             try:
                 if os.path.isfile(fp):
-                    self.font_small = ImageFont.truetype(fp, size=10)
+                    self.font_small = ImageFont.truetype(fp, size=font_size)
                     break
             except Exception:
                 continue
@@ -107,6 +110,15 @@ class OLED:
                 self.font_small = ImageFont.load_default()
             except Exception:
                 self.font_small = None
+
+        # derive a reasonable line height for layout
+        self.line_height = 10
+        try:
+            bbox = (self.font_small.getbbox("Ag") if self.font_small else None)
+            if bbox:
+                self.line_height = (bbox[3] - bbox[1]) + 2
+        except Exception:
+            pass
 
         self._try_init()
 
@@ -136,9 +148,10 @@ class OLED:
         self.draw.rectangle((0, 0, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT -1), outline=255, fill=0)
         try:
             f = self.font_small
-            self.draw.text((4, 8), str(name)[:20], fill=255, font=f)
-            self.draw.text((4, 24), str(sub)[:22], fill=255, font=f)
-            self.draw.text((4, 48), "Starting…", fill=255, font=f)
+            y = 6
+            self.draw.text((4, y), str(name)[:20], fill=255, font=f); y += self.line_height
+            self.draw.text((4, y), str(sub)[:22], fill=255, font=f); y += self.line_height
+            self.draw.text((4, y), "Starting…", fill=255, font=f)
         except Exception:
             pass
         try:
@@ -210,93 +223,15 @@ class OLED:
         y = 0
         if header:
             self.draw.text((0, y), header[:20], font=self.font_small, fill=255)
-            y += 10
+            y += self.line_height
             self.draw.line((0, y, DISPLAY_WIDTH, y), fill=255)
             y += 2
         for ln in lines[:5]:
             self.draw.text((0, y), str(ln)[:21], font=self.font_small, fill=255)
-            y += 10
+            y += self.line_height
         self._display_frame()
 
 
-class EPaperDisplay:
-    """Minimal driver wrapper for Waveshare 4.2" e-paper panels.
-
-    Controlled by env:
-      - EPD_ENABLE=1 to enable
-      - EPD_ORIENTATION=landscape|portrait (default: landscape)
-      - EPD_UPDATE_INTERVAL seconds (default: 60)
-    """
-    def __init__(self):
-        self.enabled = os.environ.get("EPD_ENABLE", "0") in ("1", "true", "yes", "on")
-        self.orientation = os.environ.get("EPD_ORIENTATION", "landscape").lower()
-        self.last_hash = None
-        self.font_large = None
-        self.font_med = None
-        # Try fonts (prefer Unifont if present for broad glyph support)
-        font_candidates = [
-            os.environ.get("OLED_FONT") or "",
-            "/usr/share/fonts/truetype/unifont/unifont.ttf",
-            "/usr/share/fonts/opentype/unifont/unifont.otf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        ]
-        for fp in font_candidates:
-            if not fp:
-                continue
-            try:
-                if os.path.isfile(fp):
-                    self.font_large = ImageFont.truetype(fp, size=28)
-                    self.font_med = ImageFont.truetype(fp, size=20)
-                    break
-            except Exception:
-                continue
-        if self.font_large is None:
-            try:
-                self.font_large = ImageFont.load_default()
-                self.font_med = ImageFont.load_default()
-            except Exception:
-                pass
-
-    def _make_image(self, lines):
-        # Waveshare 4.2" is 400x300 pixels
-        w, h = 400, 300
-        img = Image.new('1', (w, h), 1)  # white background
-        draw = ImageDraw.Draw(img)
-        y = 8
-        # Title line
-        if lines:
-            draw.text((12, y), str(lines[0])[:28], font=self.font_large or ImageFont.load_default(), fill=0)
-            y += 40
-        # Subsequent lines
-        for ln in lines[1:6]:
-            draw.text((12, y), str(ln)[:34], font=self.font_med or ImageFont.load_default(), fill=0)
-            y += 28
-        # Rotate for portrait if requested
-        if self.orientation.startswith("port"):
-            img = img.rotate(90, expand=True)
-        return img
-
-    def update(self, lines):
-        if not self.enabled or epd4in2 is None:
-            return False
-        # Avoid redundant refreshes
-        try:
-            content = "\n".join([str(x) for x in lines])
-            h = hash(content)
-            if self.last_hash == h:
-                return True
-            self.last_hash = h
-        except Exception:
-            pass
-        try:
-            epd = epd4in2.EPD()
-            epd.init()
-            img = self._make_image(lines)
-            epd.display(epd.getbuffer(img))
-            epd.sleep()
-            return True
-        except Exception:
-            return False
 
     def _display_frame(self):
         if not self.device:
@@ -435,7 +370,6 @@ class StatusDaemon:
         self.sock.bind(SOCK_PATH)
         os.chmod(SOCK_PATH, 0o666)
         self.oled = OLED(rotate=0)
-        self.epd = EPaperDisplay()
         # Manual overlay content (with TTL)
         self.overlay = None  # {header, lines, expires}
 
@@ -504,22 +438,6 @@ class StatusDaemon:
             pass
         return (header, lines)
 
-    def _compose_epd_lines(self):
-        # Slow-changing info for the e-paper
-        name = os.environ.get("OLED_NAME", "Pete Knightykell")
-        ip_v4, ssid, rssi = get_ip_info()
-        ip_line = ip_v4.split("\n")[0] if ip_v4 else "IP: n/a"
-        ssid_line = f"WiFi: {ssid}" if ssid else "WiFi: offline"
-        state = self._systemd_summary() or ("", "")
-        st = state[0] if isinstance(state, tuple) else ""
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-        return [
-            f"Hello! My name is {name}.",
-            f"{ip_line}",
-            f"{ssid_line}",
-            f"System: {st}",
-            f"Time: {ts}",
-        ]
 
     def _systemd_summary(self):
         def supplier():
@@ -600,17 +518,7 @@ class StatusDaemon:
                 self.oled.render_lines(header, lines)
             except Exception:
                 pass
-            # Opportunistically refresh e-paper at a slower cadence
-            try:
-                epd_itv = float(os.environ.get("EPD_UPDATE_INTERVAL", "60"))
-            except Exception:
-                epd_itv = 60.0
-            now = time.monotonic()
-            last_epd = getattr(self, "_last_epd", 0.0)
-            if self.epd and self.epd.enabled and (now - last_epd) >= epd_itv:
-                epd_lines = self._compose_epd_lines()
-                if self.epd.update(epd_lines):
-                    self._last_epd = now
+            # e-paper support removed
             # Write health file atomically
             try:
                 status = {

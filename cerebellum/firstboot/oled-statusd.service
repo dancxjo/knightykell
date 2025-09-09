@@ -9,9 +9,6 @@ Type=simple
 Environment=OLED_ORIENTATION=portrait-inverted
 Environment=OLED_CONTROLLER=auto
 Environment=OLED_ADDR=auto
-Environment=EPD_ENABLE=1
-Environment=EPD_ORIENTATION=landscape
-Environment=EPD_UPDATE_INTERVAL=60
 ExecStart=/usr/bin/python3 /opt/cerebellum/oled/oled_statusd.py
 ExecStop=/usr/bin/python3 /opt/cerebellum/oled/oled_statusd.py --clear
 Restart=always

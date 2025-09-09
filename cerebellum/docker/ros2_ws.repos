@@ -4,9 +4,14 @@ repositories:
     url: https://github.com/AutonomyLab/create_robot.git
     version: ros2
 
-  # Example MPU6050 driver (replace with the one you use if different)
-  # mpu6050driver:
-  #   type: git
-  #   url: https://github.com/kiwicampus/mpu6050driver.git
-  #   version: ros2
+  # Turtlebot Create 1/2 base library (required by create_robot)
+  libcreate:
+    type: git
+    url: https://github.com/revyos-ros/libcreate.git
+    version: fix-std-string
 
+  # MPU6050 IMU driver (ROS 2 port by Kiwicampus; matches bringup pkg name)
+  mpu6050driver:
+    type: git
+    url: https://github.com/kiwicampus/mpu6050driver.git
+    version: ros2

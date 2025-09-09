@@ -8,6 +8,7 @@ What’s here
 - docker/Dockerfile: ROS 2 Jazzy base + tools + Nav2 + common drivers
 - docker/compose.yml: host networking, privileged device access
 - docker/ros2_ws.repos: vcs sources (AutonomyLab create driver, add your own)
+  - Includes `AutonomyLab/create_robot`, `revyos-ros/libcreate` (fix-std-string), and `kiwicampus/mpu6050driver`.
 - firstboot/: systemd unit + script that installs Docker and starts compose
 - firstboot/oled-statusd.service + host/oled/: early-boot SH1106 OLED daemon and client
 - tools/build_rpi4_armbian_image.sh: downloads Armbian, injects files, outputs a burnable image
@@ -34,7 +35,7 @@ Runtime
   - `docker compose -f /opt/cerebellum/docker/compose.yml up -d`
  - Starts an early OLED daemon (`oled-statusd.service`) that renders status on an SH1106 display.
 
-OLED and e‑Paper status
+OLED status
 - Daemon: `/opt/cerebellum/oled/oled_statusd.py` (systemd unit `oled-statusd.service`)
 - Socket API: UNIX datagram at `/run/oled/statusd.sock`
 - Message format: JSON `{"header": "BRINGUP", "lines": ["text1", "text2", ...], "ttl": 6}`
@@ -44,13 +45,6 @@ OLED and e‑Paper status
   - `oledctl sys` | `oledctl net` | `oledctl logs`
 - The container mounts `/run/oled` and uses the client to emit progress.
   - A ROS 2 status daemon (`ros_statusd.py`) periodically updates the OLED and serves an HTTP dashboard on port 8080.
-
-Waveshare 4.2" e‑Paper (optional)
-- Enable with `EPD_ENABLE=1` in the environment (unit `firstboot/oled-statusd.service` sets env for OLED; extend as desired).
-- Orientation: `EPD_ORIENTATION=landscape|portrait` (default landscape)
-- Update cadence: `EPD_UPDATE_INTERVAL=60` (seconds)
-- Shows slow‑changing info: greeting, IP, Wi‑Fi SSID, systemd state, time.
-- First boot enables SPI (`dtparam=spi=on` or Armbian `spi-spidev`) and installs `python3-rpi.gpio`, `python3-spidev`, `waveshare-epd` (via pip).
 
 Install helpers
 - `make install-oled`: copies `host/oled/oled_statusd.py` to `/opt/cerebellum/oled/oled_statusd.py` (mode 755).

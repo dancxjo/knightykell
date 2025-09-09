@@ -256,8 +256,9 @@ if [ "$PREINSTALL_DOCKER" = "1" ]; then
 fi
 
 # Enable I2C on Raspberry Pi OS (config.txt)
-if [ -f "$BOOT_MNT/config.txt" ] && ! grep -Eq '^(dtparam=i2c_arm=on|dtoverlay=i2c1)' "$BOOT_MNT/config.txt"; then
-  echo "dtparam=i2c_arm=on" | sudo tee -a "$BOOT_MNT/config.txt" >/dev/null
+if [ -f "$BOOT_MNT/config.txt" ]; then
+  grep -Eq '^(dtparam=i2c_arm=on|dtoverlay=i2c1)' "$BOOT_MNT/config.txt" || \
+    echo "dtparam=i2c_arm=on" | sudo tee -a "$BOOT_MNT/config.txt" >/dev/null
 fi
 
 echo "[build] unmounting and finalizing"

@@ -181,6 +181,15 @@ sudo mkdir -p "$ROOT_MNT/etc/systemd/system/basic.target.wants"
 sudo ln -sf ../oled-statusd.service \
   "$ROOT_MNT/etc/systemd/system/basic.target.wants/oled-statusd.service"
 
+# Enable I2C overlays for Armbian (armbianEnv.txt)
+if [ -f "$ROOT_MNT/boot/armbianEnv.txt" ]; then
+  if ! grep -q '^overlays=' "$ROOT_MNT/boot/armbianEnv.txt"; then
+    echo 'overlays=i2c1 i2c0' | sudo tee -a "$ROOT_MNT/boot/armbianEnv.txt" >/dev/null
+  elif ! grep -q 'i2c' "$ROOT_MNT/boot/armbianEnv.txt"; then
+    sudo sed -i 's/^overlays=.*/& i2c1 i2c0/' "$ROOT_MNT/boot/armbianEnv.txt"
+  fi
+fi
+
 # Install growroot one-shot (harmless if already at max size)
 sudo install -m 0755 "$CE_DIR/firstboot/cerebellum-growroot.sh" "$ROOT_MNT/usr/local/sbin/cerebellum-growroot.sh"
 sudo install -m 0644 "$CE_DIR/firstboot/cerebellum-growroot.service" "$ROOT_MNT/etc/systemd/system/cerebellum-growroot.service"
