@@ -40,11 +40,11 @@ echo "[firstboot] time status: $(timedatectl status | head -n 5 | tr '\n' ' ' )"
 # Install only if docker is not already present (speeds up first boot if pre-baked)
 if ! command -v docker >/dev/null 2>&1; then
   apt-get update
-  apt-get install -y --no-install-recommends \
-    ca-certificates curl gnupg \
-    i2c-tools python3 python3-pil python3-luma.oled \
-    fonts-noto-core fonts-noto-extra fonts-noto-mono fonts-noto-color-emoji \
-    python3-pip
+apt-get install -y --no-install-recommends \
+  ca-certificates curl gnupg \
+  i2c-tools screen python3 python3-pil python3-luma.oled \
+  fonts-noto-core fonts-noto-extra fonts-noto-mono fonts-noto-color-emoji \
+  python3-pip
   # Add Docker CE repo to get compose plugin if not present
   install -m 0755 -d /etc/apt/keyrings
   if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
@@ -67,7 +67,7 @@ else
   # Ensure OLED libs present even if docker is preinstalled
   apt-get update
   apt-get install -y --no-install-recommends \
-    i2c-tools python3 python3-pil python3-luma.oled \
+    i2c-tools screen python3 python3-pil python3-luma.oled \
     fonts-noto-core fonts-noto-extra fonts-noto-mono fonts-noto-color-emoji || true
   # Ensure compose present in some form
   if ! docker compose version >/dev/null 2>&1 && ! command -v docker-compose >/dev/null 2>&1; then

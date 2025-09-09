@@ -256,7 +256,7 @@ if [ "$PREINSTALL_DOCKER" = "1" ]; then
       export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
       apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg \
-        i2c-tools python3 python3-pil python3-luma.oled
+        i2c-tools screen python3 python3-pil python3-luma.oled
       # Add Docker official apt repo for compose plugin
       install -m 0755 -d /etc/apt/keyrings
       curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
@@ -288,7 +288,7 @@ if [ "$PREINSTALL_DOCKER" = "1" ]; then
       export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
       apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg \
-        i2c-tools python3 python3-pil python3-luma.oled
+        i2c-tools screen python3 python3-pil python3-luma.oled
       install -m 0755 -d /etc/apt/keyrings
       curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
       chmod a+r /etc/apt/keyrings/docker.gpg

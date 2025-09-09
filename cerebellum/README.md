@@ -37,6 +37,7 @@ Runtime
   - Installs Docker + compose plugin if missing; enables Docker
   - Loads `/opt/cerebellum/image.tar` if present (preloaded image)
   - Starts the stack via `cerebellum-docker.service` (compose). Falls back to `/opt/cerebellum/docker/compose_up.sh` if needed.
+  - Runs inside a detached GNU screen session (`ck-firstboot`) so you can attach with `screen -r ck-firstboot` during bring-up.
 - An early OLED daemon (`oled-statusd.service`) renders status on SH1106/SSD1306 and tails boot logs until the system stabilizes.
 
 OLED status
