@@ -2,6 +2,10 @@
 .DEFAULT_GOAL := all
 
 SUDO ?= sudo
+DOCKER_BUILDKIT ?= 1
+BUILDKIT_PROGRESS ?= plain
+export DOCKER_BUILDKIT
+export BUILDKIT_PROGRESS
 
 # --- Cerebellum image build ---
 .PHONY: cerebellum-img cerebellum-cache-clean
@@ -117,6 +121,7 @@ configure:
 	@echo "Configuring project (no-op)"
 	@echo "Using compose for monitor: $(if $(MONITOR_COMPOSE),$(MONITOR_COMPOSE),<none>)"
 	@echo "Using compose for cerebellum: $(if $(CEREBELLUM_COMPOSE),$(CEREBELLUM_COMPOSE),<none>)"
+	@echo "BuildKit: DOCKER_BUILDKIT=$(DOCKER_BUILDKIT), BUILDKIT_PROGRESS=$(BUILDKIT_PROGRESS)"
 	@echo "IMG_OUT: $(IMG_OUT)"
 	@echo "PREFIX: $(PREFIX)"
 	@echo "SYSTEMD_DIR: $(SYSTEMD_DIR)"

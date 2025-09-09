@@ -14,7 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-rqt-common-plugins \
     ros-${ROS_DISTRO}-tf2-tools \
     ros-${ROS_DISTRO}-image-tools \
-    ros-${ROS_DISTRO}-diagnostic-tools \
     ros-${ROS_DISTRO}-rosbridge-server \
     && rm -rf /var/lib/apt/lists/*
 
@@ -37,4 +36,3 @@ RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]
-
