@@ -8,6 +8,10 @@ IMG_URL_DEFAULT="https://downloads.raspberrypi.com/raspios_lite_arm64_latest"
 IMG_URL="${IMG_URL:-$IMG_URL_DEFAULT}"
 OUT_DIR="${OUT_DIR:-$(pwd)/out}"
 WORK_DIR="${WORK_DIR:-$(pwd)/work}"
+# Cache directory for downloaded base images (avoids repeated downloads)
+CACHE_DIR="${CACHE_DIR:-$OUT_DIR/cache}"
+# Maximum age in days before re-downloading the "latest" image (0 = never re-download automatically)
+CACHE_MAX_AGE_DAYS="${CACHE_MAX_AGE_DAYS:-7}"
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")"/../.. && pwd)}"
 CE_DIR="$REPO_ROOT/cerebellum"
 WORK_IMG="$OUT_DIR/rpios-rpi4-cerebellum.img"
@@ -20,17 +24,28 @@ PREINSTALL_DOCKER="${PREINSTALL_DOCKER:-1}"
 IMG_SIZE="${IMG_SIZE:-8G}"
 
 echo "[build] Using image: $IMG_URL"
-mkdir -p "$OUT_DIR" "$WORK_DIR"
+mkdir -p "$OUT_DIR" "$WORK_DIR" "$CACHE_DIR"
 cd "$WORK_DIR"
 
 IMG_FILE_DL="rpios_latest.img.download"
+# Keep the actual archive in the cache dir and symlink it into the work dir
+CACHE_ARCHIVE="$CACHE_DIR/rpios_latest.archive"
 IMG_ARCHIVE="rpios_latest.archive"
+
+is_recent() {
+  local f="$1"; local days="$2"
+  [ ! -f "$f" ] && return 1
+  [ "$days" = "0" ] && return 0
+  # if modified within the last N days
+  find "$(dirname "$f")" -maxdepth 1 -name "$(basename "$f")" -mtime -"$days" | grep -q .
+}
 
 download() {
   echo "[build] fetching latest Raspberry Pi OS Lite arm64…"
-  curl -fSL --retry 3 --retry-connrefused -o "$IMG_ARCHIVE.tmp" "$IMG_URL"
-  mv -f "$IMG_ARCHIVE.tmp" "$IMG_ARCHIVE"
-  file "$IMG_ARCHIVE" || true
+  curl -fSL --retry 3 --retry-connrefused -o "$CACHE_ARCHIVE.tmp" "$IMG_URL"
+  mv -f "$CACHE_ARCHIVE.tmp" "$CACHE_ARCHIVE"
+  ln -sf "$CACHE_ARCHIVE" "$IMG_ARCHIVE"
+  file "$CACHE_ARCHIVE" || true
 }
 
 extract() {
@@ -63,7 +78,20 @@ extract() {
   fi
 }
 
-download
+# Reuse cached archive when available and recent enough; otherwise re-download
+if [ -f "$CACHE_ARCHIVE" ] && is_recent "$CACHE_ARCHIVE" "$CACHE_MAX_AGE_DAYS"; then
+  echo "[build] using cached archive: $CACHE_ARCHIVE"
+  ln -sf "$CACHE_ARCHIVE" "$IMG_ARCHIVE"
+else
+  download
+fi
+# Validate cached/downloaded file isn't an HTML error page
+FTYPE=$(file -b "$IMG_ARCHIVE" || true)
+if echo "$FTYPE" | grep -qi 'HTML'; then
+  echo "[build] cached/downloaded file looks like HTML (likely a redirect/error). Re-downloading…"
+  rm -f "$CACHE_ARCHIVE" "$IMG_ARCHIVE"
+  download
+fi
 extract
 
 echo "[build] copying base image -> $WORK_IMG"

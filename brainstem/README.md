@@ -1,7 +1,11 @@
-Pete Knightykell — Brainstem
+Pete Knightykell — Brainstem (Deprecated)
 
-Purpose
-- Arduino Pro Micro code that bridges the cerebellum (ROS2 host) to the iRobot Create 1 base.
+Status
+- Deprecated: We have switched away from the DB‑25 harness and now use a direct USB serial dongle from the cerebellum to the iRobot Create 1 OI port.
+- This setup works fine so far. If the cerebellum’s boot time proves too long for reliable starts, we may revive this Arduino bridge.
+
+Purpose (legacy)
+- Arduino Pro Micro code that bridges the cerebellum (ROS 2 host) to the iRobot Create 1 base.
 - Handles low‑level serial, motor/turret/LED control passthrough, encoder/bumper/IR reporting.
 
 Notes
@@ -16,7 +20,7 @@ Layout
 - tools/: flashing scripts and test utilities (future)
 - docs/: wiring, pinout, protocol spec (future)
 
-Getting started
+Getting started (legacy)
 - Wire `Serial1` (D0=RX, D1=TX on Pro Micro) to the Create 1 OI port (TTL 0–5V), GND shared.
 - USB `Serial` is for cerebellum; send newline‑delimited JSON commands (examples below).
 - Minimal commands implemented: start/safe/full, drive_direct, leds, estop, sensors.
@@ -37,7 +41,7 @@ Telemetry
 Safety
 - Watchdog stops the robot if no drive command arrives within 500 ms.
 
-Build and flash (PlatformIO)
+Build and flash (PlatformIO, legacy)
 - Install PlatformIO Core (CLI) or VS Code + PlatformIO extension.
 - Connect the Pro Micro via USB.
 - In this folder:

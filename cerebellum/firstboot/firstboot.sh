@@ -5,28 +5,19 @@ LOG=/var/log/cerebellum-firstboot.log
 exec >>"$LOG" 2>&1
 echo "[firstboot] $(date -Is) starting" 
 
-# Ensure cgroups (best effort; supports either cmdline.txt or armbianEnv.txt)
+# Ensure cgroups (Raspberry Pi OS)
 if [ -f /boot/cmdline.txt ]; then
   if ! grep -q 'cgroup_enable=memory' /boot/cmdline.txt; then
     sudo sed -i '1 s|$| cgroup_enable=cpuset cgroup_enable=memory cgroup_memory=1|' /boot/cmdline.txt || true
     echo "[firstboot] appended cgroup args to cmdline.txt"
   fi
-elif [ -f /boot/armbianEnv.txt ]; then
-  if ! grep -q '^extraargs=.*cgroup_enable=memory' /boot/armbianEnv.txt; then
-    echo 'extraargs=cgroup_enable=cpuset cgroup_enable=memory cgroup_memory=1' | sudo tee -a /boot/armbianEnv.txt >/dev/null || true
-    echo "[firstboot] added extraargs to armbianEnv.txt"
-  fi
 fi
 
-echo "[firstboot] enabling I2C/SPI and installing deps + docker (if needed)"
+echo "[firstboot] enabling I2C and installing deps + docker (if needed)"
 echo i2c-dev > /etc/modules-load.d/i2c-dev.conf
 
-# Enable I2C for Armbian via overlays, or Raspberry Pi OS via config.txt
-if [ -f /boot/armbianEnv.txt ]; then
-  if ! grep -q '^overlays=.*i2c' /boot/armbianEnv.txt; then
-    echo 'overlays=i2c1 i2c0' >> /boot/armbianEnv.txt || true
-  fi
-elif [ -f /boot/config.txt ]; then
+# Enable I2C for Raspberry Pi OS via config.txt
+if [ -f /boot/config.txt ]; then
   if ! grep -Eq '^(dtparam=i2c_arm=on|dtoverlay=i2c1)' /boot/config.txt; then
     echo 'dtparam=i2c_arm=on' >> /boot/config.txt || true
   fi

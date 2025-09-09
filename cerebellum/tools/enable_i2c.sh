@@ -8,18 +8,11 @@ SUDO=${SUDO:-sudo}
 ${SUDO} mkdir -p /etc/modules-load.d
 echo i2c-dev | ${SUDO} tee /etc/modules-load.d/i2c-dev.conf >/dev/null
 
-if [ -f /boot/armbianEnv.txt ]; then
-  echo "[i2c] Detected Armbian. Ensuring overlays contain i2c."
-  if ! grep -q '^overlays=' /boot/armbianEnv.txt; then
-    echo 'overlays=i2c1 i2c0' | ${SUDO} tee -a /boot/armbianEnv.txt >/dev/null
-  elif ! grep -q 'i2c' /boot/armbianEnv.txt; then
-    ${SUDO} sed -i 's/^overlays=.*/& i2c1 i2c0/' /boot/armbianEnv.txt
-  fi
-elif [ -f /boot/config.txt ]; then
+if [ -f /boot/config.txt ]; then
   echo "[i2c] Detected Raspberry Pi OS. Ensuring dtparam=i2c_arm=on."
   grep -Eq '^(dtparam=i2c_arm=on|dtoverlay=i2c1)' /boot/config.txt || echo 'dtparam=i2c_arm=on' | ${SUDO} tee -a /boot/config.txt >/dev/null
 else
-  echo "[i2c] WARN: neither /boot/armbianEnv.txt nor /boot/config.txt found; please enable I2C manually in your bootloader config."
+  echo "[i2c] WARN: /boot/config.txt not found; please enable I2C in your bootloader config."
 fi
 
 echo "[i2c] Loading i2c-dev module now (will still require reboot for overlays)"

@@ -1,8 +1,12 @@
 Pete Knightykell — Cerebellum
 
 Purpose
-- ROS 2 (Jazzy) + Nav2 stack, running in Docker on a Raspberry Pi 4 (Armbian-based image).
-- Bridges to brainstem over USB serial; publishes navigation and perception.
+- ROS 2 (Jazzy) + Nav2 stack, running in Docker on a Raspberry Pi 4 (Raspberry Pi OS Lite).
+- Connects directly to the iRobot Create 1 via a USB serial dongle (DB‑25 harness removed); publishes navigation and perception.
+
+Brainstem deprecation
+- The separate Arduino “brainstem” bridge is deprecated. We switched from the DB‑25 harness to a direct USB serial dongle, which has worked well so far.
+- If cerebellum boot time ends up being too slow for reliable bring‑up, we may reinstate the brainstem.
 
 What’s here
 - docker/Dockerfile: ROS 2 Jazzy base + tools + Nav2 + common drivers
@@ -11,7 +15,6 @@ What’s here
   - Includes `AutonomyLab/create_robot`, `revyos-ros/libcreate` (fix-std-string), and `kiwicampus/mpu6050driver`.
 - firstboot/: systemd unit + script that installs Docker and starts compose
 - firstboot/oled-statusd.service + host/oled/: early-boot SH1106 OLED daemon and client
-- tools/build_rpi4_armbian_image.sh: downloads Armbian, injects files, outputs a burnable image
 - tools/build_rpi4_rpios_image.sh: downloads Raspberry Pi OS Lite (arm64), injects files, outputs a burnable image
  - docker/ros_statusd.py: ROS 2 status daemon with an HTTP dashboard + JSON API
 
@@ -21,11 +24,8 @@ Quick start
   - docker save Knightykell/cerebellum:latest -o ../firstboot/image.tar
 - Bake OS image:
   - cd cerebellum/tools
-  - sudo ./build_rpi4_armbian_image.sh
-  - result: out/armbian-rpi4-cerebellum.img (flash with Raspberry Pi Imager)
-  - or for Raspberry Pi OS Lite (Bookworm arm64):
-    - sudo ./build_rpi4_rpios_image.sh
-    - result: out/rpios-rpi4-cerebellum.img
+  - sudo ./build_rpi4_rpios_image.sh
+  - result: out/rpios-rpi4-cerebellum.img (flash with Raspberry Pi Imager)
 
 Runtime
 - On first boot, the systemd unit runs `/opt/cerebellum/firstboot.sh` which:
@@ -81,3 +81,6 @@ Time sync (NTP)
   - `timedatectl status`
   - `sudo timedatectl set-ntp true`
   - If no WAN, set a one-off reasonable time: `sudo date -s "2025-09-08 23:15:00"`; then NTP will keep it.
+- Image download cache
+- The RPi OS builder caches the downloaded base image in `out/cache/rpios_latest.archive` and reuses it for up to 7 days (configurable via `CACHE_MAX_AGE_DAYS`).
+- Clear the cache: `make rpios-cache-clean` or delete files under `out/cache/`.

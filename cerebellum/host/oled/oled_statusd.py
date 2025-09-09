@@ -102,7 +102,8 @@ class OLED:
             "/usr/share/fonts/truetype/unifont/unifont.ttf",
             "/usr/share/fonts/opentype/unifont/unifont.otf",
         ]
-        font_size = 12
+        # Slightly larger default size for readability; override with OLED_FONT_SIZE
+        font_size = 14
         try:
             font_size = int(os.environ.get("OLED_FONT_SIZE", font_size))
         except Exception:
@@ -128,6 +129,18 @@ class OLED:
                 self.line_height = (bbox[3] - bbox[1]) + 2
         except Exception:
             pass
+
+        # Ticker configuration
+        def _get_int(k, d):
+            try:
+                return int(os.environ.get(k, d))
+            except Exception:
+                return d
+        self.ticker_enabled = os.environ.get("OLED_TICKER", "1").lower() in ("1", "true", "yes", "on")
+        self.ticker_speed = _get_int("OLED_TICKER_SPEED", 2)  # pixels per frame (~0.5s)
+        self._ticker_text = ""
+        self._ticker_width = 0
+        self._ticker_pos = 0
 
         self._try_init()
 
@@ -222,119 +235,24 @@ class OLED:
         self.draw.rectangle((0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
         self._display_frame()
 
-    def render_lines(self, header: str, lines):
-        if not self.device:
-            # Retry init occasionally in case I2C appears later in boot
-            self._try_init()
-            if not self.device:
-                return
-        self.draw.rectangle((0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
-        y = 0
-        if header:
-            self.draw.text((0, y), header[:20], font=self.font_small, fill=255)
-            y += self.line_height
-            self.draw.line((0, y, DISPLAY_WIDTH, y), fill=255)
-            y += 2
-        for ln in lines[:5]:
-            self.draw.text((0, y), str(ln)[:21], font=self.font_small, fill=255)
-            y += self.line_height
-        self._display_frame()
-
-
-
-    def _display_frame(self):
-        if not self.device:
-            return
-        frame = self.image
+    def _text_width(self, text: str) -> int:
         try:
-            if self.flip_x:
-                frame = frame.transpose(Image.FLIP_LEFT_RIGHT)
-            if self.flip_y:
-                frame = frame.transpose(Image.FLIP_TOP_BOTTOM)
+            # Pillow 8.0+: ImageFont.getlength via ImageDraw.textlength
+            if hasattr(self.draw, 'textlength'):
+                return int(self.draw.textlength(text, font=self.font_small))
+            # Fallback: bbox width
+            bbox = self.draw.textbbox((0,0), text, font=self.font_small)
+            return max(0, bbox[2] - bbox[0])
         except Exception:
-            pass
-        self.device.display(frame)
-
-    def splash(self, name: str = None, sub: str = None):
-        if not name:
-            name = os.environ.get("OLED_NAME", "Pete Knightykell")
-        if not sub:
-            sub = os.environ.get("OLED_SUBTEXT", "Booting…")
-        # Draw a simple splash frame
-        if not self.device:
-            self._try_init()
-            if not self.device:
-                return
-        self.draw.rectangle((0, 0, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT -1), outline=255, fill=0)
-        try:
-            f = self.font_small
-            self.draw.text((4, 8), str(name)[:20], fill=255, font=f)
-            self.draw.text((4, 24), str(sub)[:22], fill=255, font=f)
-            self.draw.text((4, 48), "Starting…", fill=255, font=f)
-        except Exception:
-            pass
-        try:
-            self._display_frame()
-        except Exception:
-            pass
-
-    def _make_device(self, address: int, controller: str):
-        serial = i2c(port=self.i2c_port, address=address)
-        if controller == "sh1106":
-            # SH1106 often needs horizontal offset in landscape
-            if self.h_offset is None:
-                eff_h = 2 if self.rotate in (0, 2) else 0
-            else:
-                eff_h = self.h_offset
-            return sh1106(serial, rotate=self.rotate, h_offset=eff_h)
-        elif controller == "ssd1306":
-            return ssd1306(serial, rotate=self.rotate)
-        elif controller == "auto":
-            # Try SH1106 first, then SSD1306
             try:
-                if self.h_offset is None:
-                    eff_h = 2 if self.rotate in (0, 2) else 0
-                else:
-                    eff_h = self.h_offset
-                return sh1106(serial, rotate=self.rotate, h_offset=eff_h)
+                w, _ = self.draw.textsize(text, font=self.font_small)
+                return int(w)
             except Exception:
-                return ssd1306(serial, rotate=self.rotate)
-        else:
-            return ssd1306(serial, rotate=self.rotate)
+                return len(text) * 6
 
-    def _try_init(self):
-        if i2c is None or (sh1106 is None and ssd1306 is None):
-            print("[oled] luma.oled not available; running in no-display mode", file=sys.stderr)
-            return
-        addrs = [self.address] if isinstance(self.address, int) else [0x3C, 0x3D]
-        ctrls = [self.controller] if self.controller != "auto" else ["sh1106", "ssd1306"]
-        last_err = None
-        for a in addrs:
-            for c in ctrls:
-                try:
-                    self.device = self._make_device(a, c)
-                    print(f"[oled] initialized {c} at 0x{a:02X} rotate={self.rotate}")
-                    self.last_init_err = None
-                    return
-                except Exception as e:
-                    last_err = e
-                    continue
-        self.device = None
-        self.last_init_err = last_err
-        if last_err:
-            print(f"[oled] init failed: {last_err}", file=sys.stderr)
-
-    def clear(self):
+    def _render_ticker(self, header: str, lines):
+        # Prepare device if needed
         if not self.device:
-            self._try_init()
-            if not self.device:
-                return
-        self.draw.rectangle((0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
-        self._display_frame()
-
-    def render_lines(self, header: str, lines):
-        if not self.device:
-            # Retry init occasionally in case I2C appears later in boot
             self._try_init()
             if not self.device:
                 return
@@ -342,13 +260,57 @@ class OLED:
         y = 0
         if header:
             self.draw.text((0, y), header[:20], font=self.font_small, fill=255)
-            y += 10
+            y += self.line_height
             self.draw.line((0, y, DISPLAY_WIDTH, y), fill=255)
             y += 2
-        for ln in lines[:5]:
-            self.draw.text((0, y), str(ln)[:21], font=self.font_small, fill=255)
-            y += 10
+        # Build ticker string
+        parts = [str(x).strip() for x in (lines or []) if str(x).strip()]
+        if not parts:
+            self._display_frame()
+            return
+        text = ('   •   ').join(parts)
+        # Update ticker metrics/state if content changed
+        if text != self._ticker_text:
+            self._ticker_text = text
+            self._ticker_width = self._text_width(text)
+            # Start just off the right edge for smooth entry
+            self._ticker_pos = DISPLAY_WIDTH
+        # Draw scrolling text; position counts down from right edge to negative width
+        x = DISPLAY_WIDTH - self._ticker_pos
+        try:
+            self.draw.text((x, y), text, font=self.font_small, fill=255)
+        except Exception:
+            pass
         self._display_frame()
+        # Advance for next frame
+        self._ticker_pos += max(1, int(self.ticker_speed))
+        if self._ticker_pos > (self._ticker_width + DISPLAY_WIDTH + 10):
+            self._ticker_pos = 0
+
+    def render_lines(self, header: str, lines):
+        if not self.device:
+            # Retry init occasionally in case I2C appears later in boot
+            self._try_init()
+            if not self.device:
+                return
+        if self.ticker_enabled:
+            return self._render_ticker(header, lines)
+        # Fallback: show at most two lines with larger line spacing
+        self.draw.rectangle((0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
+        y = 0
+        if header:
+            self.draw.text((0, y), header[:18], font=self.font_small, fill=255)
+            y += self.line_height
+            self.draw.line((0, y, DISPLAY_WIDTH, y), fill=255)
+            y += 2
+        for ln in (lines or [])[:2]:
+            self.draw.text((0, y), str(ln)[:20], font=self.font_small, fill=255)
+            y += self.line_height
+        self._display_frame()
+
+
+
+    # (Duplicate methods removed; see earlier definitions above)
 
 
 def get_ip_info():
@@ -384,7 +346,8 @@ class StatusDaemon:
 
         # Pager state
         self.page_index = 0
-        self.page_interval = float(os.environ.get("OLED_PAGE_INTERVAL", "4"))
+        # Slow down paging by default for readability
+        self.page_interval = float(os.environ.get("OLED_PAGE_INTERVAL", "10"))
         self._last_page_ts = 0.0
 
         # Baseline content used by overview page
