@@ -8,6 +8,8 @@ services:
         ROS_BASE_IMAGE: ${ROS_BASE_IMAGE:-ros:${ROS_DISTRO:-jazzy}-ros-base}
         GIT_USER_NAME: ${GIT_USER_NAME:-}
         GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
+      cache_from:
+        - knightykell/monitor:${ROS_DISTRO:-jazzy}
     image: knightykell/monitor:${ROS_DISTRO:-jazzy}
     network_mode: host
     environment:

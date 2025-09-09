@@ -8,6 +8,8 @@ services:
         ROS_BASE_IMAGE: ${ROS_BASE_IMAGE:-ros:${ROS_DISTRO:-jazzy}-ros-base}
         GIT_USER_NAME: ${GIT_USER_NAME:-}
         GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
+      cache_from:
+        - Knightykell/cerebellum:latest
     platform: ${CEREBELLUM_PLATFORM:-}
     image: Knightykell/cerebellum:latest
     network_mode: host
