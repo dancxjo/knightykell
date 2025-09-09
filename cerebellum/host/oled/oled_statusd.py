@@ -224,6 +224,15 @@ class OLED:
         except Exception:
             self.frame_delay = 0.1
 
+        # Bottom-line ticker state (independent of page; maintains position across pages)
+        try:
+            self.bottom_ticker_speed = int(os.environ.get("OLED_BOTTOM_TICKER_SPEED", str(self.ticker_speed)))
+        except Exception:
+            self.bottom_ticker_speed = self.ticker_speed
+        self._bottom_ticker_text = ""
+        self._bottom_ticker_width = 0
+        self._bottom_ticker_pos = 0
+
         self._try_init()
 
     def _display_frame(self):
@@ -437,37 +446,53 @@ class OLED:
             except Exception:
                 pass
 
-        # Footer: clock + hostname + IP on a single bottom line (smaller font)
+        # Footer: bottom-line ticker (clock, uptime, host, WiFi)
         try:
             now = datetime.now().strftime(os.environ.get("OLED_CLOCK_FMT", "%H:%M:%S"))
             ip_v4, ssid, rssi = get_ip_info()
-            ip_short = ""
-            if ip_v4:
-                first = str(ip_v4).split()[0]
-                if ":" in first:
-                    first = first.split(":", 1)[-1]
-                if "/" in first:
-                    first = first.split("/", 1)[0]
-                ip_short = first
             # compute y position bottom line
             y_footer = self._H() - (footer_lh)
-            # clear footer area to avoid overdraw artifacts
-            self.draw.rectangle((0, y_footer - 1, self._W(), self._H()), outline=0, fill=0)
-            # Left: clock
-            self.draw.text((0, y_footer), now, font=footer_font, fill=255)
-            # Right: Hostname (replace IP display)
-            right_text = os.uname().nodename
-            if right_text:
-                try:
-                    rw = int(self.draw.textlength(right_text, font=footer_font)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), right_text, font=footer_font)[2]
-                except Exception:
-                    rw = len(right_text) * 6
-                self.draw.text((self._W() - rw, y_footer), right_text, font=footer_font, fill=255)
-            # Center: leave empty to reduce clutter
+            # Build ticker content
+            # uptime
             try:
-                pass
+                us = float(subprocess.check_output("awk '{print $1}' /proc/uptime", shell=True, text=True).strip())
+                s = int(us)
+                h, rem = divmod(s, 3600)
+                m, rems = divmod(rem, 60)
+                if h > 0:
+                    up_txt = f"{h}h{m:02d}m"
+                elif m > 0:
+                    up_txt = f"{m}m{rems:02d}s"
+                else:
+                    up_txt = f"{s}s"
+            except Exception:
+                up_txt = "?"
+            host = os.uname().nodename
+            items = [f"time={now}", f"up={up_txt}", f"host={host}"]
+            if ssid:
+                items.append(f"ssid={ssid}")
+            if rssi:
+                items.append(f"rssi={rssi}")
+            btext = '   |   '.join(items)
+            if btext != self._bottom_ticker_text:
+                self._bottom_ticker_text = btext
+                self._bottom_ticker_width = self._text_width(btext, font=footer_font)
+                cycle = self._bottom_ticker_width + self._W() + 10
+                if cycle > 0 and self._bottom_ticker_pos > cycle:
+                    self._bottom_ticker_pos = self._bottom_ticker_pos % cycle
+                self._ticker_width = self._bottom_ticker_width
+                self._ticker_pos = self._bottom_ticker_pos
+            bx = self._W() - self._bottom_ticker_pos
+            self.draw.rectangle((0, y_footer - 1, self._W(), self._H()), outline=0, fill=0)
+            try:
+                self.draw.text((bx, y_footer), self._bottom_ticker_text, font=footer_font, fill=255)
             except Exception:
                 pass
+            self._bottom_ticker_pos += max(1, int(self.bottom_ticker_speed))
+            cycle = self._bottom_ticker_width + self._W() + 10
+            if self._bottom_ticker_pos > cycle:
+                self._bottom_ticker_pos = 0
+            self._ticker_pos = self._bottom_ticker_pos
         except Exception:
             pass
         self._display_frame()
@@ -511,20 +536,88 @@ class OLED:
                 pass
         # Body: up to 3 lines in compact font
         body_font = self.font_ticker or self.font_small
-        for ln in (lines or [])[:3]:
+        # Merge lines with pipe, wrap to fit display width
+        merged = " | ".join(str(ln).replace("\n", " ") for ln in (lines or []) if str(ln).strip())
+        max_width = self._W() - 2
+        # Simple word wrap
+        words = merged.split()
+        wrapped_lines = []
+        line = ""
+        for word in words:
+            test_line = f"{line} {word}".strip()
+            if self._text_width(test_line, font=body_font) <= max_width:
+                line = test_line
+            else:
+                if line:
+                    wrapped_lines.append(line)
+                line = word
+        if line:
+            wrapped_lines.append(line)
+        for wl in wrapped_lines[:3]:
             try:
-                self.draw.text((0, y), str(ln)[:21], font=body_font, fill=255)
+                self.draw.text((0, y), wl, font=body_font, fill=255)
             except Exception:
                 pass
             y += max(9, int(self.line_height - 1))
-        # Footer: hostname only on the right
+        # Footer: bottom-line ticker showing time, uptime, hostname, and WiFi info
         try:
-            host = os.uname().nodename
             footer_font = self.font_footer or body_font
-            y_footer = self._H() - (max(8, int(self.line_height - 2)))
+            # Determine footer line height
+            try:
+                fb = footer_font.getbbox("Ag")
+                footer_lh = (fb[3] - fb[1]) + 2
+            except Exception:
+                footer_lh = max(8, int(self.line_height - 2))
+            y_footer = self._H() - footer_lh
+            # Build ticker content (ASCII only)
+            now = datetime.now().strftime(os.environ.get("OLED_CLOCK_FMT", "%H:%M:%S"))
+            # uptime in seconds -> concise human form
+            up_txt = ""
+            try:
+                us = float(subprocess.check_output("awk '{print $1}' /proc/uptime", shell=True, text=True).strip())
+                s = int(us)
+                h, rem = divmod(s, 3600)
+                m, rems = divmod(rem, 60)
+                if h > 0:
+                    up_txt = f"{h}h{m:02d}m"
+                elif m > 0:
+                    up_txt = f"{m}m{rems:02d}s"
+                else:
+                    up_txt = f"{s}s"
+            except Exception:
+                up_txt = "?"
+            host = os.uname().nodename
+            ip_v4, ssid, rssi = get_ip_info()
+            items = [f"time={now}", f"up={up_txt}", f"host={host}"]
+            if ssid:
+                items.append(f"ssid={ssid}")
+            if rssi:
+                items.append(f"rssi={rssi}")
+            text = '   |   '.join(items)
+            # Update ticker metrics/state without resetting position
+            if text != self._bottom_ticker_text:
+                self._bottom_ticker_text = text
+                self._bottom_ticker_width = self._text_width(text, font=footer_font)
+                cycle = self._bottom_ticker_width + self._W() + 10
+                if cycle > 0 and self._bottom_ticker_pos > cycle:
+                    self._bottom_ticker_pos = self._bottom_ticker_pos % cycle
+                # expose width/pos for external timing heuristics
+                self._ticker_width = self._bottom_ticker_width
+                self._ticker_pos = self._bottom_ticker_pos
+            x = self._W() - self._bottom_ticker_pos
+            # clear footer area to avoid overdraw artifacts
             self.draw.rectangle((0, y_footer - 1, self._W(), self._H()), outline=0, fill=0)
-            rw = int(self.draw.textlength(host, font=footer_font)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), host, font=footer_font)[2]
-            self.draw.text((self._W() - rw, y_footer), host, font=footer_font, fill=255)
+            try:
+                self.draw.text((x, y_footer), self._bottom_ticker_text, font=footer_font, fill=255)
+            except Exception:
+                pass
+            # Advance for next frame and wrap
+            self._bottom_ticker_pos += max(1, int(self.bottom_ticker_speed))
+            cycle = self._bottom_ticker_width + self._W() + 10
+            if self._bottom_ticker_pos > cycle:
+                self._bottom_ticker_pos = 0
+            # keep mirrored values in sync
+            self._ticker_pos = self._bottom_ticker_pos
         except Exception:
             pass
         self._display_frame()
