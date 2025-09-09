@@ -188,12 +188,17 @@ if [ "${INCLUDE_SOURCE:-0}" = "1" ]; then
   echo "[build] including source at /opt/src/knightykell (excluding large outputs)"
   sudo mkdir -p "$ROOT_MNT/opt/src/knightykell"
   sudo rsync -a --delete \
+    --one-file-system \
+    --exclude '.git/' \
+    --exclude 'node_modules/' \
+    --exclude '*/__pycache__/' \
     --exclude 'cerebellum/out/' \
+    --exclude 'cerebellum/work/' \
     --exclude 'cerebellum/tools/out/' \
     --exclude 'cerebellum/tools/work/' \
+    --exclude '*/mnt_root/**' \
+    --exclude '*/mnt_boot/**' \
     --exclude 'monitor/out/' \
-    --exclude '*/__pycache__/' \
-    --exclude '.git/objects/' \
     "$REPO_ROOT/" "$ROOT_MNT/opt/src/knightykell/"
   sudo chown -R root:root "$ROOT_MNT/opt/src/knightykell"
 fi
