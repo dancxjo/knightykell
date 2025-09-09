@@ -83,6 +83,8 @@ class OLED:
         self.draw = ImageDraw.Draw(self.image)
         # Prefer clear, readable fonts for small OLEDs
         self.font_small = None
+        self.font_header = None
+        self.font_tiny = None
         font_path_env = os.environ.get("OLED_FONT")
         candidate_fonts = []
         if font_path_env:
@@ -90,20 +92,23 @@ class OLED:
         candidate_fonts += [
             # Lato (clean sans)
             "/usr/share/fonts/truetype/lato/Lato-Regular.ttf",
+            "/usr/share/fonts/truetype/lato/Lato-Bold.ttf",
             # Noto (broad glyph coverage, good hinting)
             "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
             "/usr/share/fonts/truetype/noto/NotoSansMono-Regular.ttf",
             # Fira Code (mono) as a crisp option if present
             "/usr/share/fonts/opentype/firacode/FiraCode-Regular.otf",
             "/usr/share/fonts/truetype/firacode/FiraCode-Regular.ttf",
             # DejaVu fallbacks
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
             "/usr/share/fonts/truetype/unifont/unifont.ttf",
             "/usr/share/fonts/opentype/unifont/unifont.otf",
         ]
-        # Slightly larger default size for readability; override with OLED_FONT_SIZE
-        font_size = 14
+        # Slightly smaller body font for more room; override with OLED_FONT_SIZE
+        font_size = 12
         try:
             font_size = int(os.environ.get("OLED_FONT_SIZE", font_size))
         except Exception:
@@ -120,6 +125,49 @@ class OLED:
                 self.font_small = ImageFont.load_default()
             except Exception:
                 self.font_small = None
+
+        # Header font: try to use a bold variant slightly larger; fall back to body font
+        header_size = max(12, int(round(font_size * 1.1)))
+        for fp in candidate_fonts:
+            try:
+                if os.path.isfile(fp) and ("Bold" in os.path.basename(fp) or fp.lower().endswith("-bold.ttf")):
+                    self.font_header = ImageFont.truetype(fp, size=header_size)
+                    break
+            except Exception:
+                continue
+        if self.font_header is None:
+            try:
+                # Use same family at a touch larger if available
+                base = candidate_fonts[0] if candidate_fonts else None
+                if base and os.path.isfile(base):
+                    self.font_header = ImageFont.truetype(base, size=header_size)
+            except Exception:
+                self.font_header = self.font_small
+
+        # If header may contain Shavian code points, prefer Unifont for coverage
+        try:
+            unifont_paths = [
+                "/usr/share/fonts/truetype/unifont/unifont.ttf",
+                "/usr/share/fonts/opentype/unifont/unifont.otf",
+            ]
+            for up in unifont_paths:
+                if os.path.isfile(up):
+                    self.font_unifont = ImageFont.truetype(up, size=header_size)
+                    break
+        except Exception:
+            self.font_unifont = None
+
+        # Tiny font for top-right logo
+        tiny_size = max(8, min(10, font_size - 2))
+        for fp in candidate_fonts:
+            try:
+                if os.path.isfile(fp):
+                    self.font_tiny = ImageFont.truetype(fp, size=tiny_size)
+                    break
+            except Exception:
+                continue
+        if self.font_tiny is None:
+            self.font_tiny = self.font_small
 
         # derive a reasonable line height for layout
         self.line_height = 10
@@ -258,11 +306,48 @@ class OLED:
                 return
         self.draw.rectangle((0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
         y = 0
+        # Top-right tiny logo
+        try:
+            # Include Shavian namer dot (·) to mark a proper name
+            logo = os.environ.get("OLED_LOGO_TEXT", "\u00B7Knightykell")
+            if logo and self.font_tiny:
+                lw = int(self.draw.textlength(logo, font=self.font_tiny)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), logo, font=self.font_tiny)[2]
+                self.draw.text((DISPLAY_WIDTH - lw - 1, 0), logo, font=self.font_tiny, fill=255)
+        except Exception:
+            pass
+
         if header:
-            self.draw.text((0, y), header[:20], font=self.font_small, fill=255)
-            y += self.line_height
+            # Optional: render headline in Shavian if enabled
+            header_src = header
+            if os.environ.get("OLED_HEADLINE_SHAVIAN", "1").lower() in ("1", "true", "yes", "on"):
+                try:
+                    header = shavian_transliterate(header)
+                except Exception:
+                    header = header_src
+
+            # Header slightly darker/bolder: use header font (or Unifont if Shavian), and overdraw once for weight
+            use_font = self.font_header or self.font_small
+            try:
+                # If header contains Shavian block, prefer Unifont for coverage
+                if any(0x10450 <= ord(ch) <= 0x1047F for ch in header) and getattr(self, 'font_unifont', None):
+                    use_font = self.font_unifont
+            except Exception:
+                pass
+            try:
+                self.draw.text((0, y), header[:20], font=use_font, fill=255)
+                # Overdraw offset by 1px right for thicker look (monochrome)
+                self.draw.text((1, y), header[:20], font=use_font, fill=255)
+            except Exception:
+                self.draw.text((0, y), header[:20], font=self.font_small, fill=255)
+            # move to next line and draw a separator
+            try:
+                hbbox = self.draw.textbbox((0, y), header[:20], font=self.font_header or self.font_small)
+                h = (hbbox[3] - hbbox[1]) if hbbox else self.line_height
+            except Exception:
+                h = self.line_height
+            y += max(self.line_height, h)
             self.draw.line((0, y, DISPLAY_WIDTH, y), fill=255)
-            y += 2
+            y += 1
         # Build ticker string
         parts = [str(x).strip() for x in (lines or []) if str(x).strip()]
         if not parts:
@@ -275,10 +360,40 @@ class OLED:
             self._ticker_width = self._text_width(text)
             # Start just off the right edge for smooth entry
             self._ticker_pos = DISPLAY_WIDTH
-        # Draw scrolling text; position counts down from right edge to negative width
+        # Draw scrolling text on the second line (below header)
         x = DISPLAY_WIDTH - self._ticker_pos
         try:
             self.draw.text((x, y), text, font=self.font_small, fill=255)
+        except Exception:
+            pass
+
+        # Footer: clock and IP address on bottom two lines
+        try:
+            now = datetime.now().strftime(os.environ.get("OLED_CLOCK_FMT", "%H:%M:%S"))
+            ip_v4, ssid, rssi = get_ip_info()
+            ip_short = ""
+            if ip_v4:
+                first = str(ip_v4).split()[0]
+                if ":" in first:
+                    first = first.split(":", 1)[-1]
+                if "/" in first:
+                    first = first.split("/", 1)[0]
+                ip_short = first
+            # compute y positions from bottom
+            lh = self.line_height
+            y_ip = DISPLAY_HEIGHT - lh
+            y_clk = DISPLAY_HEIGHT - (2 * lh)
+            # clear footer area to avoid overdraw artifacts
+            self.draw.rectangle((0, y_clk - 1, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
+            # Draw clock (left) and ssid or RSSI (right)
+            self.draw.text((0, y_clk), now, font=self.font_small, fill=255)
+            right_text = ip_short or ssid or ""
+            if right_text:
+                try:
+                    rw = int(self.draw.textlength(right_text, font=self.font_small)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), right_text, font=self.font_small)[2]
+                except Exception:
+                    rw = len(right_text) * 6
+                self.draw.text((DISPLAY_WIDTH - rw, y_ip), right_text, font=self.font_small, fill=255)
         except Exception:
             pass
         self._display_frame()
@@ -327,6 +442,28 @@ def get_ip_info():
     ssid = run("iwgetid -r || true")
     rssi = run("iw dev wlan0 link | awk -F' signal ' 'NF>1{print $2}' | awk '{print $1}' || true")
     return ip_v4, ssid, rssi
+
+
+def shavian_transliterate(text: str) -> str:
+    """Best-effort transliteration to Shavian.
+    If a mapping file is provided via OLED_SHAVIAN_MAP (JSON dict), use it.
+    Otherwise, return input unchanged to avoid incorrect output.
+    """
+    try:
+      mp_path = os.environ.get("OLED_SHAVIAN_MAP")
+      if mp_path and os.path.isfile(mp_path):
+          with open(mp_path, 'r', encoding='utf-8') as f:
+              import json as _json
+              mapper = _json.load(f) or {}
+          # simple token replacement by longest keys first
+          s = text
+          for k in sorted(mapper.keys(), key=len, reverse=True):
+              s = s.replace(k, mapper.get(k, k))
+          return s
+    except Exception:
+      pass
+    # Default: no-op unless explicitly allowed to pass through a naive map
+    return text
 
 
 class StatusDaemon:

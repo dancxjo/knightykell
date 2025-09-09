@@ -1,7 +1,7 @@
 [Unit]
 Description=Knightykell Cerebellum First Boot
-After=local-fs.target network-pre.target
-Wants=network-pre.target
+After=local-fs.target network-online.target cerebellum-growroot.service
+Wants=network-online.target
 ConditionPathExists=/opt/cerebellum/firstboot.sh
 
 [Service]

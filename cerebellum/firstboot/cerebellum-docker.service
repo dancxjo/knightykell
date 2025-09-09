@@ -1,8 +1,8 @@
 [Unit]
 Description=Knightykell Cerebellum Docker Compose
 Requires=docker.service
-Wants=network-online.target time-sync.target
-After=docker.service network-online.target time-sync.target
+Wants=network-online.target time-sync.target cerebellum-firstboot.service
+After=docker.service network-online.target time-sync.target cerebellum-firstboot.service
 
 [Service]
 Type=oneshot

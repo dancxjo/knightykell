@@ -1,7 +1,9 @@
 [Unit]
 Description=Cerebellum Grow Root Partition and Filesystem (once)
 Wants=systemd-udev-settle.service
-After=systemd-udev-settle.service local-fs.target
+After=local-fs.target systemd-udev-settle.service
+# Ensure root grows before firstboot and Docker bring-up
+Before=cerebellum-firstboot.service docker.service
 
 [Service]
 Type=oneshot
@@ -12,4 +14,3 @@ ConditionPathExists=!/var/lib/cerebellum/growroot.done
 
 [Install]
 WantedBy=multi-user.target
-
