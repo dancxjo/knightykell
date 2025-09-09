@@ -239,6 +239,18 @@ class OLED:
             pass
         self.device.display(frame)
 
+    def _W(self) -> int:
+        try:
+            return int(self.image.size[0])
+        except Exception:
+            return DISPLAY_WIDTH
+
+    def _H(self) -> int:
+        try:
+            return int(self.image.size[1])
+        except Exception:
+            return DISPLAY_HEIGHT
+
     def splash(self, name: str = None, sub: str = None):
         if not name:
             name = os.environ.get("OLED_NAME", "Pete Knightykell")
@@ -249,7 +261,7 @@ class OLED:
             self._try_init()
             if not self.device:
                 return
-        self.draw.rectangle((0, 0, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT -1), outline=255, fill=0)
+        self.draw.rectangle((0, 0, self._W() - 1, self._H() - 1), outline=255, fill=0)
         try:
             f = self.font_small
             y = 6
@@ -300,6 +312,12 @@ class OLED:
                     self.device = self._make_device(a, c)
                     print(f"[oled] initialized {c} at 0x{a:02X} rotate={self.rotate}")
                     self.last_init_err = None
+                    # Ensure backing image matches device size/orientation
+                    try:
+                        self.image = Image.new("1", self.device.size, 0)
+                        self.draw = ImageDraw.Draw(self.image)
+                    except Exception:
+                        pass
                     return
                 except Exception as e:
                     last_err = e
@@ -314,7 +332,7 @@ class OLED:
             self._try_init()
             if not self.device:
                 return
-        self.draw.rectangle((0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
+        self.draw.rectangle((0, 0, self._W(), self._H()), outline=0, fill=0)
         self._display_frame()
 
     def _text_width(self, text: str, font=None) -> int:
@@ -338,7 +356,7 @@ class OLED:
             self._try_init()
             if not self.device:
                 return
-        self.draw.rectangle((0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
+        self.draw.rectangle((0, 0, self._W(), self._H()), outline=0, fill=0)
         y = 0
         # Top-right tiny logo (use Shavian-capable font when available)
         try:
@@ -347,7 +365,7 @@ class OLED:
             font_logo = self.font_shavian or self.font_tiny or self.font_small
             if logo and font_logo:
                 lw = int(self.draw.textlength(logo, font=font_logo)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), logo, font=font_logo)[2]
-                self.draw.text((DISPLAY_WIDTH - lw - 1, 0), logo, font=font_logo, fill=255)
+                self.draw.text((self._W() - lw - 1, 0), logo, font=font_logo, fill=255)
         except Exception:
             pass
 
@@ -381,7 +399,7 @@ class OLED:
             except Exception:
                 h = self.line_height
             y += max(self.line_height, h)
-            self.draw.line((0, y, DISPLAY_WIDTH, y), fill=255)
+            self.draw.line((0, y, self._W(), y), fill=255)
             y += 1
         # Build ticker string
         parts = [str(x).strip() for x in (lines or []) if str(x).strip()]
@@ -394,9 +412,9 @@ class OLED:
             self._ticker_text = text
             self._ticker_width = self._text_width(text, font=self.font_ticker or self.font_small)
             # Start just off the right edge for smooth entry
-            self._ticker_pos = DISPLAY_WIDTH
+            self._ticker_pos = self._W()
         # Draw scrolling text across multiple lines using a smaller ticker font
-        x = DISPLAY_WIDTH - self._ticker_pos
+        x = self._W() - self._ticker_pos
         # compute ticker line height
         try:
             tbbox = (self.font_ticker or self.font_small).getbbox("Ag")
@@ -410,7 +428,7 @@ class OLED:
             footer_lh = (fb[3] - fb[1]) + 2
         except Exception:
             footer_lh = self.line_height
-        max_y = DISPLAY_HEIGHT - footer_lh - 1
+        max_y = self._H() - footer_lh - 1
         lines_avail = max(1, min(self.ticker_lines, max(0, (max_y - y)) // ticker_lh))
         for i in range(lines_avail):
             yy = y + i * ticker_lh
@@ -432,9 +450,9 @@ class OLED:
                     first = first.split("/", 1)[0]
                 ip_short = first
             # compute y position bottom line
-            y_footer = DISPLAY_HEIGHT - (footer_lh)
+            y_footer = self._H() - (footer_lh)
             # clear footer area to avoid overdraw artifacts
-            self.draw.rectangle((0, y_footer - 1, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
+            self.draw.rectangle((0, y_footer - 1, self._W(), self._H()), outline=0, fill=0)
             # Left: clock
             self.draw.text((0, y_footer), now, font=footer_font, fill=255)
             # Right: Hostname (replace IP display)
@@ -444,7 +462,7 @@ class OLED:
                     rw = int(self.draw.textlength(right_text, font=footer_font)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), right_text, font=footer_font)[2]
                 except Exception:
                     rw = len(right_text) * 6
-                self.draw.text((DISPLAY_WIDTH - rw, y_footer), right_text, font=footer_font, fill=255)
+                self.draw.text((self._W() - rw, y_footer), right_text, font=footer_font, fill=255)
             # Center: leave empty to reduce clutter
             try:
                 pass
@@ -455,7 +473,7 @@ class OLED:
         self._display_frame()
         # Advance for next frame
         self._ticker_pos += max(1, int(self.ticker_speed))
-        if self._ticker_pos > (self._ticker_width + DISPLAY_WIDTH + 10):
+        if self._ticker_pos > (self._ticker_width + self._W() + 10):
             self._ticker_pos = 0
 
     def render_lines(self, header: str, lines):
@@ -465,7 +483,7 @@ class OLED:
             if not self.device:
                 return
         # Always render a static three-line view, smaller font
-        self.draw.rectangle((0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
+        self.draw.rectangle((0, 0, self._W(), self._H()), outline=0, fill=0)
         y = 0
         # Top-right tiny Shavian logo
         try:
@@ -473,7 +491,7 @@ class OLED:
             font_logo = self.font_shavian or self.font_tiny or self.font_small
             if logo and font_logo:
                 lw = int(self.draw.textlength(logo, font=font_logo)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), logo, font=font_logo)[2]
-                self.draw.text((DISPLAY_WIDTH - lw - 1, 0), logo, font=font_logo, fill=255)
+                self.draw.text((self._W() - lw - 1, 0), logo, font=font_logo, fill=255)
         except Exception:
             pass
         # Header
@@ -487,7 +505,7 @@ class OLED:
                         header = header_src
                 self.draw.text((0, y), header[:18], font=(self.font_header or self.font_small), fill=255)
                 y += max(self.line_height, 11)
-                self.draw.line((0, y, DISPLAY_WIDTH, y), fill=255)
+                self.draw.line((0, y, self._W(), y), fill=255)
                 y += 1
             except Exception:
                 pass
@@ -503,10 +521,10 @@ class OLED:
         try:
             host = os.uname().nodename
             footer_font = self.font_footer or body_font
-            y_footer = DISPLAY_HEIGHT - (max(8, int(self.line_height - 2)))
-            self.draw.rectangle((0, y_footer - 1, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
+            y_footer = self._H() - (max(8, int(self.line_height - 2)))
+            self.draw.rectangle((0, y_footer - 1, self._W(), self._H()), outline=0, fill=0)
             rw = int(self.draw.textlength(host, font=footer_font)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), host, font=footer_font)[2]
-            self.draw.text((DISPLAY_WIDTH - rw, y_footer), host, font=footer_font, fill=255)
+            self.draw.text((self._W() - rw, y_footer), host, font=footer_font, fill=255)
         except Exception:
             pass
         self._display_frame()
@@ -703,10 +721,9 @@ class StatusDaemon:
                 if ov:
                     header, lines = ov.get("header", ""), ov.get("lines", [])
                 else:
-                    # adjust dynamic minimum page interval to allow full ticker pass
+                    # adjust dynamic minimum page interval (estimate based on display width)
                     try:
-                        # estimated time for a full ticker cycle
-                        cycle = (self.oled._ticker_width + DISPLAY_WIDTH + 10) / max(1, int(self.oled.ticker_speed))
+                        cycle = (self.oled._ticker_width + self.oled._W() + 10) / max(1, int(self.oled.ticker_speed))
                         self.dynamic_min_interval = max(2.0, cycle * max(0.05, float(getattr(self.oled, 'frame_delay', 0.25))))
                     except Exception:
                         self.dynamic_min_interval = 0.0
