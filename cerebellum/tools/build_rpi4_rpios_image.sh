@@ -49,7 +49,10 @@ download() {
 }
 
 extract() {
-  case "$(file -b "$IMG_ARCHIVE")" in
+  # Follow symlinks when determining archive type
+  local ftype
+  ftype=$(file -bL "$IMG_ARCHIVE")
+  case "$ftype" in
     *Zip\ archive*|*ZIP*)
       echo "[build] unzip archive"
       unzip -o "$IMG_ARCHIVE" > /dev/null
@@ -68,7 +71,7 @@ extract() {
       IMG_FILE="$IMG_ARCHIVE"
       ;;
     *)
-      echo "[build] ERROR: unsupported archive format: $(file -b "$IMG_ARCHIVE")" >&2
+      echo "[build] ERROR: unsupported archive format: $ftype" >&2
       exit 1
       ;;
   esac
@@ -86,7 +89,7 @@ else
   download
 fi
 # Validate cached/downloaded file isn't an HTML error page
-FTYPE=$(file -b "$IMG_ARCHIVE" || true)
+FTYPE=$(file -bL "$IMG_ARCHIVE" || true)
 if echo "$FTYPE" | grep -qi 'HTML'; then
   echo "[build] cached/downloaded file looks like HTML (likely a redirect/error). Re-downloading…"
   rm -f "$CACHE_ARCHIVE" "$IMG_ARCHIVE"
