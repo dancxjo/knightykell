@@ -487,7 +487,7 @@ class OLED:
         y = 0
         # Top-right tiny Shavian logo
         try:
-            logo = os.environ.get("OLED_LOGO_TEXT", "\u00B7𐑯𐑲𐑑𐑦𐑒𐑧𐑤")
+            logo = os.environ.get("OLED_LOGO_TEXT", "𐑯𐑲𐑑𐑦𐑒𐑧𐑤")
             font_logo = self.font_shavian or self.font_tiny or self.font_small
             if logo and font_logo:
                 lw = int(self.draw.textlength(logo, font=font_logo)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), logo, font=font_logo)[2]
