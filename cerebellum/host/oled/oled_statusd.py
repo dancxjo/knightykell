@@ -110,6 +110,114 @@ class OLED:
 
         self._try_init()
 
+    def _display_frame(self):
+        if not self.device:
+            return
+        frame = self.image
+        try:
+            if self.flip_x:
+                frame = frame.transpose(Image.FLIP_LEFT_RIGHT)
+            if self.flip_y:
+                frame = frame.transpose(Image.FLIP_TOP_BOTTOM)
+        except Exception:
+            pass
+        self.device.display(frame)
+
+    def splash(self, name: str = None, sub: str = None):
+        if not name:
+            name = os.environ.get("OLED_NAME", "Pete Knightykell")
+        if not sub:
+            sub = os.environ.get("OLED_SUBTEXT", "Booting…")
+        # Draw a simple splash frame
+        if not self.device:
+            self._try_init()
+            if not self.device:
+                return
+        self.draw.rectangle((0, 0, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT -1), outline=255, fill=0)
+        try:
+            f = self.font_small
+            self.draw.text((4, 8), str(name)[:20], fill=255, font=f)
+            self.draw.text((4, 24), str(sub)[:22], fill=255, font=f)
+            self.draw.text((4, 48), "Starting…", fill=255, font=f)
+        except Exception:
+            pass
+        try:
+            self._display_frame()
+        except Exception:
+            pass
+
+    def _make_device(self, address: int, controller: str):
+        serial = i2c(port=self.i2c_port, address=address)
+        if controller == "sh1106":
+            # SH1106 often needs horizontal offset in landscape
+            if self.h_offset is None:
+                eff_h = 2 if self.rotate in (0, 2) else 0
+            else:
+                eff_h = self.h_offset
+            return sh1106(serial, rotate=self.rotate, h_offset=eff_h)
+        elif controller == "ssd1306":
+            return ssd1306(serial, rotate=self.rotate)
+        elif controller == "auto":
+            # Try SH1106 first, then SSD1306
+            try:
+                if self.h_offset is None:
+                    eff_h = 2 if self.rotate in (0, 2) else 0
+                else:
+                    eff_h = self.h_offset
+                return sh1106(serial, rotate=self.rotate, h_offset=eff_h)
+            except Exception:
+                return ssd1306(serial, rotate=self.rotate)
+        else:
+            return ssd1306(serial, rotate=self.rotate)
+
+    def _try_init(self):
+        if i2c is None or (sh1106 is None and ssd1306 is None):
+            print("[oled] luma.oled not available; running in no-display mode", file=sys.stderr)
+            return
+        addrs = [self.address] if isinstance(self.address, int) else [0x3C, 0x3D]
+        ctrls = [self.controller] if self.controller != "auto" else ["sh1106", "ssd1306"]
+        last_err = None
+        for a in addrs:
+            for c in ctrls:
+                try:
+                    self.device = self._make_device(a, c)
+                    print(f"[oled] initialized {c} at 0x{a:02X} rotate={self.rotate}")
+                    self.last_init_err = None
+                    return
+                except Exception as e:
+                    last_err = e
+                    continue
+        self.device = None
+        self.last_init_err = last_err
+        if last_err:
+            print(f"[oled] init failed: {last_err}", file=sys.stderr)
+
+    def clear(self):
+        if not self.device:
+            self._try_init()
+            if not self.device:
+                return
+        self.draw.rectangle((0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
+        self._display_frame()
+
+    def render_lines(self, header: str, lines):
+        if not self.device:
+            # Retry init occasionally in case I2C appears later in boot
+            self._try_init()
+            if not self.device:
+                return
+        self.draw.rectangle((0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
+        y = 0
+        if header:
+            self.draw.text((0, y), header[:20], font=self.font_small, fill=255)
+            y += 10
+            self.draw.line((0, y, DISPLAY_WIDTH, y), fill=255)
+            y += 2
+        for ln in lines[:5]:
+            self.draw.text((0, y), str(ln)[:21], font=self.font_small, fill=255)
+            y += 10
+        self._display_frame()
+
 
 class EPaperDisplay:
     """Minimal driver wrapper for Waveshare 4.2" e-paper panels.

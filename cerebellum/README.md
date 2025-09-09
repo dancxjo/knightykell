@@ -52,6 +52,12 @@ Waveshare 4.2" e‑Paper (optional)
 - Shows slow‑changing info: greeting, IP, Wi‑Fi SSID, systemd state, time.
 - First boot enables SPI (`dtparam=spi=on` or Armbian `spi-spidev`) and installs `python3-rpi.gpio`, `python3-spidev`, `waveshare-epd` (via pip).
 
+Install helpers
+- `make install-oled`: copies `host/oled/oled_statusd.py` to `/opt/cerebellum/oled/oled_statusd.py` (mode 755).
+- `make install-oled-service`: installs the systemd unit to `/etc/systemd/system/oled-statusd.service` and reloads systemd.
+- `make enable-oled`: enables and starts the service.
+- Variables: `SUDO` (default `sudo`), `PREFIX` (default `/opt/cerebellum`). Example: `PREFIX=/opt/cerebellum make install-oled`.
+
 Web dashboard
 - URL: `http://<robot-ip>:8080/` (auto-refreshing HTML) and `http://<robot-ip>:8080/api/status` (JSON)
 - Shows node/topic counts, rates for `/odom`, `/imu/data`, `/scan`, `/camera/image_raw`, and lifecycle states for common Nav2 nodes.
