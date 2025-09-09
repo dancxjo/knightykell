@@ -19,21 +19,25 @@ What’s here
  - docker/ros_statusd.py: ROS 2 status daemon with an HTTP dashboard + JSON API
 
 Quick start
-- Build container locally (optional):
-  - cd cerebellum/docker && docker build -t Knightykell/cerebellum:latest .
-  - docker save Knightykell/cerebellum:latest -o ../firstboot/image.tar
-- Bake OS image:
-  - cd cerebellum/tools
-  - sudo ./build_rpi4_rpios_image.sh
-  - result: out/rpios-rpi4-cerebellum.img (flash with Raspberry Pi Imager)
+- Build the Raspberry Pi OS image (preferred):
+  - At repo root: `make cerebellum-img`
+  - Optional preload: if `Knightykell/cerebellum:latest` exists locally, the builder saves and embeds it at `/opt/cerebellum/image.tar` for faster first boot.
+  - Output: `cerebellum/out/rpios-rpi4-cerebellum.img`
+- Alternative (manual script):
+  - `sudo cerebellum/tools/build_rpi4_rpios_image.sh`
+- Build the container image (optional):
+  - `make cerebellum-build`
+  - Or: `cd cerebellum/docker && docker build -t Knightykell/cerebellum:latest .`
+  - To preload: `docker save Knightykell/cerebellum:latest -o cerebellum/firstboot/image.tar`
 
 Runtime
-- On first boot, the systemd unit runs `/opt/cerebellum/firstboot.sh` which:
-  - Installs Docker + compose plugin
-- Optionally loads `/opt/cerebellum/image.tar` if present
-- On first boot, it prefers `docker compose up --no-build` (faster). If the image is missing, it falls back to building.
-  - `docker compose -f /opt/cerebellum/docker/compose.yml up -d`
- - Starts an early OLED daemon (`oled-statusd.service`) that renders status on an SH1106 display.
+- On first boot, `/opt/cerebellum/firstboot.sh`:
+  - Enables I2C and installs OLED dependencies (luma.oled, PIL, Noto fonts)
+  - Ensures time sync (systemd-timesyncd) before Docker pulls
+  - Installs Docker + compose plugin if missing; enables Docker
+  - Loads `/opt/cerebellum/image.tar` if present (preloaded image)
+  - Starts the stack via `cerebellum-docker.service` (compose). Falls back to `/opt/cerebellum/docker/compose_up.sh` if needed.
+- An early OLED daemon (`oled-statusd.service`) renders status on SH1106/SSD1306 and tails boot logs until the system stabilizes.
 
 OLED status
 - Daemon: `/opt/cerebellum/oled/oled_statusd.py` (systemd unit `oled-statusd.service`)
@@ -47,22 +51,16 @@ OLED status
   - A ROS 2 status daemon (`ros_statusd.py`) periodically updates the OLED and serves an HTTP dashboard on port 8080.
 
 Install helpers
-- `make install-oled`: copies `host/oled/oled_statusd.py` to `/opt/cerebellum/oled/oled_statusd.py` (mode 755).
-- `make install-oled-service`: installs the systemd unit to `/etc/systemd/system/oled-statusd.service` and reloads systemd.
-- `make enable-oled`: enables and starts the service.
-- Variables: `SUDO` (default `sudo`), `PREFIX` (default `/opt/cerebellum`). Example: `PREFIX=/opt/cerebellum make install-oled`.
+- The image builder installs the OLED daemon and unit automatically. On an existing Pi, copy `host/oled/` and `firstboot/oled-statusd.service` into place and run: `sudo systemctl daemon-reload && sudo systemctl enable --now oled-statusd`.
 
-QEMU test run (experimental)
-- Build the Raspberry Pi OS (arm64) image: `make rpios-img`
-- Run it under QEMU (Pi 3 emulation): `make qemu-rpios`
-  - Requires `qemu-system-aarch64` on the host.
-  - Uses the Pi OS `kernel8.img` and a Pi 3 DTB from the image; boots with `-M raspi3b` and SD card emulation.
-  - Notes: QEMU’s Raspberry Pi emulation is limited; networking and peripherals may not match real hardware.
+QEMU emulation
+- Raspberry Pi QEMU targets are not maintained in this repo; the Makefile omits them.
 
 Storage growth
 - Some upstream images auto-expand the rootfs using `resize2fs_once`. Our build expands the image during creation and also installs a one-shot `cerebellum-growroot.service` that grows the partition/filesystem on first boot to fill the actual SD card.
 - Manually install/enable on an existing system if needed:
-  - `make install-growroot && make enable-growroot`
+  - Copy `cerebellum/firstboot/cerebellum-growroot.sh` to `/usr/local/sbin/` and `cerebellum/firstboot/cerebellum-growroot.service` to `/etc/systemd/system/`.
+  - `sudo systemctl daemon-reload && sudo systemctl enable --now cerebellum-growroot.service`
   - Or run once by hand: `sudo growpart /dev/mmcblk0 2 && sudo resize2fs /dev/mmcblk0p2` (install `cloud-guest-utils` first).
 
 Web dashboard
@@ -81,6 +79,6 @@ Time sync (NTP)
   - `timedatectl status`
   - `sudo timedatectl set-ntp true`
   - If no WAN, set a one-off reasonable time: `sudo date -s "2025-09-08 23:15:00"`; then NTP will keep it.
-- Image download cache
-- The RPi OS builder caches the downloaded base image in `out/cache/rpios_latest.archive` and reuses it for up to 7 days (configurable via `CACHE_MAX_AGE_DAYS`).
-- Clear the cache: `make rpios-cache-clean` or delete files under `out/cache/`.
+Image download cache
+- The RPi OS builder caches the downloaded base image in `cerebellum/out/cache/rpios_latest.archive` and reuses it for up to 7 days (configurable via `CACHE_MAX_AGE_DAYS`).
+- Clear the cache: `make cerebellum-cache-clean` or delete files under `cerebellum/out/cache/`.
