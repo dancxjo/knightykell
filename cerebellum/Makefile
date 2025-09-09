@@ -38,3 +38,19 @@ uninstall-oled:
 	-$(SUDO) rm -f "$(OLED_DST)"
 	@echo "Uninstalled OLED daemon and unit (if present)."
 
+# --- RPi OS image build + QEMU run ---
+.PHONY: rpios-img qemu-rpios rpios-run
+
+IMG_OUT ?= out/rpios-rpi4-cerebellum.img
+
+rpios-img:
+	@echo "Building Raspberry Pi OS (arm64) image into $(IMG_OUT)"
+	cd tools && ./build_rpi4_rpios_image.sh
+	@echo "Image built: $(IMG_OUT)"
+
+qemu-rpios:
+	@echo "Launching QEMU with $(IMG_OUT) (best-effort Pi3 emulation)"
+	tools/run_rpios_qemu.sh "$(IMG_OUT)"
+
+rpios-run: rpios-img qemu-rpios
+	@true

@@ -111,6 +111,12 @@ systemctl restart oled-statusd || true
 # Convenience command in PATH
 install -m 0755 /opt/cerebellum/oled/oledctl /usr/local/bin/oledctl 2>/dev/null || true
 
+# Ensure Docker build context contains expected client path
+if [ -f /opt/cerebellum/oled/oled_client.py ] && [ ! -f /opt/cerebellum/host/oled/oled_client.py ]; then
+  mkdir -p /opt/cerebellum/host/oled
+  cp -a /opt/cerebellum/oled/oled_client.py /opt/cerebellum/host/oled/oled_client.py || true
+fi
+
 
 
 # Pre-load image if present

@@ -58,6 +58,13 @@ Install helpers
 - `make enable-oled`: enables and starts the service.
 - Variables: `SUDO` (default `sudo`), `PREFIX` (default `/opt/cerebellum`). Example: `PREFIX=/opt/cerebellum make install-oled`.
 
+QEMU test run (experimental)
+- Build the Raspberry Pi OS (arm64) image: `make rpios-img`
+- Run it under QEMU (Pi 3 emulation): `make qemu-rpios`
+  - Requires `qemu-system-aarch64` on the host.
+  - Uses the Pi OS `kernel8.img` and a Pi 3 DTB from the image; boots with `-M raspi3b` and SD card emulation.
+  - Notes: QEMU’s Raspberry Pi emulation is limited; networking and peripherals may not match real hardware.
+
 Web dashboard
 - URL: `http://<robot-ip>:8080/` (auto-refreshing HTML) and `http://<robot-ip>:8080/api/status` (JSON)
 - Shows node/topic counts, rates for `/odom`, `/imu/data`, `/scan`, `/camera/image_raw`, and lifecycle states for common Nav2 nodes.
