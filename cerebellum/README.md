@@ -34,13 +34,23 @@ Runtime
   - `docker compose -f /opt/cerebellum/docker/compose.yml up -d`
  - Starts an early OLED daemon (`oled-statusd.service`) that renders status on an SH1106 display.
 
-OLED status
+OLED and e‑Paper status
 - Daemon: `/opt/cerebellum/oled/oled_statusd.py` (systemd unit `oled-statusd.service`)
 - Socket API: UNIX datagram at `/run/oled/statusd.sock`
-- Message format: JSON `{"header": "BRINGUP", "lines": ["text1", "text2", ...]}`
-- CLI client: `/opt/cerebellum/oled/oled_client.py HEADER [LINE ...]`
+- Message format: JSON `{"header": "BRINGUP", "lines": ["text1", "text2", ...], "ttl": 6}`
+- CLI client: `/opt/cerebellum/oled/oled_client.py [--ttl SEC] HEADER [LINE ...]`
+- Convenience tool (installed to PATH on first boot): `oledctl`
+  - `oledctl msg --ttl 8 "HEADER" "line1" "line2"`
+  - `oledctl sys` | `oledctl net` | `oledctl logs`
 - The container mounts `/run/oled` and uses the client to emit progress.
   - A ROS 2 status daemon (`ros_statusd.py`) periodically updates the OLED and serves an HTTP dashboard on port 8080.
+
+Waveshare 4.2" e‑Paper (optional)
+- Enable with `EPD_ENABLE=1` in the environment (unit `firstboot/oled-statusd.service` sets env for OLED; extend as desired).
+- Orientation: `EPD_ORIENTATION=landscape|portrait` (default landscape)
+- Update cadence: `EPD_UPDATE_INTERVAL=60` (seconds)
+- Shows slow‑changing info: greeting, IP, Wi‑Fi SSID, systemd state, time.
+- First boot enables SPI (`dtparam=spi=on` or Armbian `spi-spidev`) and installs `python3-rpi.gpio`, `python3-spidev`, `waveshare-epd` (via pip).
 
 Web dashboard
 - URL: `http://<robot-ip>:8080/` (auto-refreshing HTML) and `http://<robot-ip>:8080/api/status` (JSON)

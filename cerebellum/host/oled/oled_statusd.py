@@ -17,6 +17,12 @@ try:
 except Exception as e:
     i2c = sh1106 = ssd1306 = None
 
+# Optional Waveshare e-Paper 4.2" (SPI) support
+try:
+    from waveshare_epd import epd4in2  # type: ignore
+except Exception:
+    epd4in2 = None
+
 
 SOCK_DIR = "/run/oled"
 SOCK_PATH = os.path.join(SOCK_DIR, "statusd.sock")
@@ -70,20 +76,136 @@ class OLED:
         self.h_offset = h_offset
         self.device = None
         self.last_init_err = None
+        # optional flips to fine-tune physical orientation
+        def _tf(k):
+            return os.environ.get(k, "0").lower() in ("1", "true", "yes", "on")
+        self.flip_x = _tf("OLED_FLIP_X")
+        self.flip_y = _tf("OLED_FLIP_Y")
 
         # drawing resources
         self.image = Image.new("1", (DISPLAY_WIDTH, DISPLAY_HEIGHT), 0)
         self.draw = ImageDraw.Draw(self.image)
-        try:
-            self.font_small = ImageFont.load_default()
-        except Exception:
-            self.font_small = None
+        # Prefer a Unicode-capable font if available for emoji/symbols
+        self.font_small = None
+        font_path_env = os.environ.get("OLED_FONT")
+        candidate_fonts = []
+        if font_path_env:
+            candidate_fonts.append(font_path_env)
+        candidate_fonts += [
+            "/usr/share/fonts/truetype/unifont/unifont.ttf",
+            "/usr/share/fonts/opentype/unifont/unifont.otf",
+        ]
+        for fp in candidate_fonts:
+            try:
+                if os.path.isfile(fp):
+                    self.font_small = ImageFont.truetype(fp, size=10)
+                    break
+            except Exception:
+                continue
+        if self.font_small is None:
+            try:
+                self.font_small = ImageFont.load_default()
+            except Exception:
+                self.font_small = None
 
         self._try_init()
 
+
+class EPaperDisplay:
+    """Minimal driver wrapper for Waveshare 4.2" e-paper panels.
+
+    Controlled by env:
+      - EPD_ENABLE=1 to enable
+      - EPD_ORIENTATION=landscape|portrait (default: landscape)
+      - EPD_UPDATE_INTERVAL seconds (default: 60)
+    """
+    def __init__(self):
+        self.enabled = os.environ.get("EPD_ENABLE", "0") in ("1", "true", "yes", "on")
+        self.orientation = os.environ.get("EPD_ORIENTATION", "landscape").lower()
+        self.last_hash = None
+        self.font_large = None
+        self.font_med = None
+        # Try fonts (prefer Unifont if present for broad glyph support)
+        font_candidates = [
+            os.environ.get("OLED_FONT") or "",
+            "/usr/share/fonts/truetype/unifont/unifont.ttf",
+            "/usr/share/fonts/opentype/unifont/unifont.otf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+        for fp in font_candidates:
+            if not fp:
+                continue
+            try:
+                if os.path.isfile(fp):
+                    self.font_large = ImageFont.truetype(fp, size=28)
+                    self.font_med = ImageFont.truetype(fp, size=20)
+                    break
+            except Exception:
+                continue
+        if self.font_large is None:
+            try:
+                self.font_large = ImageFont.load_default()
+                self.font_med = ImageFont.load_default()
+            except Exception:
+                pass
+
+    def _make_image(self, lines):
+        # Waveshare 4.2" is 400x300 pixels
+        w, h = 400, 300
+        img = Image.new('1', (w, h), 1)  # white background
+        draw = ImageDraw.Draw(img)
+        y = 8
+        # Title line
+        if lines:
+            draw.text((12, y), str(lines[0])[:28], font=self.font_large or ImageFont.load_default(), fill=0)
+            y += 40
+        # Subsequent lines
+        for ln in lines[1:6]:
+            draw.text((12, y), str(ln)[:34], font=self.font_med or ImageFont.load_default(), fill=0)
+            y += 28
+        # Rotate for portrait if requested
+        if self.orientation.startswith("port"):
+            img = img.rotate(90, expand=True)
+        return img
+
+    def update(self, lines):
+        if not self.enabled or epd4in2 is None:
+            return False
+        # Avoid redundant refreshes
+        try:
+            content = "\n".join([str(x) for x in lines])
+            h = hash(content)
+            if self.last_hash == h:
+                return True
+            self.last_hash = h
+        except Exception:
+            pass
+        try:
+            epd = epd4in2.EPD()
+            epd.init()
+            img = self._make_image(lines)
+            epd.display(epd.getbuffer(img))
+            epd.sleep()
+            return True
+        except Exception:
+            return False
+
+    def _display_frame(self):
+        if not self.device:
+            return
+        frame = self.image
+        try:
+            if self.flip_x:
+                frame = frame.transpose(Image.FLIP_LEFT_RIGHT)
+            if self.flip_y:
+                frame = frame.transpose(Image.FLIP_TOP_BOTTOM)
+        except Exception:
+            pass
+        self.device.display(frame)
+
     def splash(self, name: str = None, sub: str = None):
         if not name:
-            name = os.environ.get("OLED_NAME", "Cerebellum")
+            name = os.environ.get("OLED_NAME", "Pete Knightykell")
         if not sub:
             sub = os.environ.get("OLED_SUBTEXT", "Booting…")
         # Draw a simple splash frame
@@ -100,7 +222,7 @@ class OLED:
         except Exception:
             pass
         try:
-            self.device.display(self.image)
+            self._display_frame()
         except Exception:
             pass
 
@@ -156,7 +278,7 @@ class OLED:
             if not self.device:
                 return
         self.draw.rectangle((0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), outline=0, fill=0)
-        self.device.display(self.image)
+        self._display_frame()
 
     def render_lines(self, header: str, lines):
         if not self.device:
@@ -174,7 +296,7 @@ class OLED:
         for ln in lines[:5]:
             self.draw.text((0, y), str(ln)[:21], font=self.font_small, fill=255)
             y += 10
-        self.device.display(self.image)
+        self._display_frame()
 
 
 def get_ip_info():
@@ -205,6 +327,16 @@ class StatusDaemon:
         self.sock.bind(SOCK_PATH)
         os.chmod(SOCK_PATH, 0o666)
         self.oled = OLED(rotate=0)
+        self.epd = EPaperDisplay()
+        # Manual overlay content (with TTL)
+        self.overlay = None  # {header, lines, expires}
+
+        # Pager state
+        self.page_index = 0
+        self.page_interval = float(os.environ.get("OLED_PAGE_INTERVAL", "4"))
+        self._last_page_ts = 0.0
+
+        # Baseline content used by overview page
         self.header = "BOOT"
         self.lines = ["Starting…", datetime.now().strftime("%H:%M:%S")]
         self.lock = threading.Lock()
@@ -213,9 +345,12 @@ class StatusDaemon:
 
         # Show splash briefly (non-blocking if no device)
         try:
-            self.oled.splash(os.environ.get("OLED_NAME", "Cerebellum"), os.uname().nodename)
+            self.oled.splash(os.environ.get("OLED_NAME", "Pete Knightykell"), os.uname().nodename)
         except Exception:
             pass
+
+        # cache for expensive calls
+        self._cache = {}
 
     def shutdown(self):
         self.stop_event.set()
@@ -232,27 +367,142 @@ class StatusDaemon:
         except Exception:
             pass
 
+    def _cached(self, key, ttl_sec, supplier):
+        now = time.monotonic()
+        ent = self._cache.get(key)
+        if not ent or (now - ent[0]) > ttl_sec:
+            try:
+                val = supplier()
+            except Exception:
+                val = None
+            self._cache[key] = (now, val)
+            return val
+        return ent[1]
+
+    def _page_overview(self):
+        header = self.header
+        lines = list(self.lines)
+        ip_v4, ssid, rssi = get_ip_info()
+        if ip_v4:
+            lines.append(ip_v4.split("\n")[0][:21])
+        if ssid:
+            lines.append(f"📶 {ssid}"[:21])
+        if rssi:
+            lines.append(f"📡 {rssi}"[:21])
+        try:
+            uptime = subprocess.check_output("awk '{print $1}' /proc/uptime", shell=True, text=True).strip()
+            lines.append(f"🕒 {float(uptime):.0f}s")
+        except Exception:
+            pass
+        return (header, lines)
+
+    def _compose_epd_lines(self):
+        # Slow-changing info for the e-paper
+        name = os.environ.get("OLED_NAME", "Pete Knightykell")
+        ip_v4, ssid, rssi = get_ip_info()
+        ip_line = ip_v4.split("\n")[0] if ip_v4 else "IP: n/a"
+        ssid_line = f"WiFi: {ssid}" if ssid else "WiFi: offline"
+        state = self._systemd_summary() or ("", "")
+        st = state[0] if isinstance(state, tuple) else ""
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        return [
+            f"Hello! My name is {name}.",
+            f"{ip_line}",
+            f"{ssid_line}",
+            f"System: {st}",
+            f"Time: {ts}",
+        ]
+
+    def _systemd_summary(self):
+        def supplier():
+            state = subprocess.check_output(
+                ["bash", "-lc", "systemctl is-system-running 2>/dev/null || true"], text=True
+            ).strip()
+            failed = subprocess.check_output(
+                ["bash", "-lc", "systemctl --failed --no-legend 2>/dev/null | awk '{print $1}' | head -n 3 | xargs -r echo"], text=True
+            ).strip()
+            return state, failed
+        return self._cached("systemd", 5.0, supplier)
+
+    def _page_systemd(self):
+        state, failed = self._systemd_summary() or ("", "")
+        icon = {
+            "running": "✅",
+            "degraded": "⚠️",
+            "starting": "⏳",
+            "maintenance": "🛠",
+            "stopping": "⏹",
+            "offline": "⚫",
+            "failed": "❌",
+        }.get(state, "ℹ️")
+        lines = [f"State: {state}"]
+        if failed:
+            parts = failed.split()
+            lines.append(f"Failed: {len(parts)}")
+            for u in parts[:2]:
+                lines.append(f"✗ {u}")
+        return (f"SYSTEM {icon}", lines)
+
+    def _dmesg_tail(self):
+        return self._cached(
+            "dmesg", 5.0,
+            lambda: subprocess.check_output(["bash", "-lc", "dmesg -T 2>/dev/null | tail -n 3 || true"], text=True)
+        )
+
+    def _page_dmesg(self):
+        out = self._dmesg_tail() or ""
+        lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
+        return ("DMESG", lines[:4])
+
+    def _journal_warnings(self):
+        return self._cached(
+            "journal_warn", 6.0,
+            lambda: subprocess.check_output(["bash", "-lc", "journalctl -b -p warning --no-pager -n 3 -o short 2>/dev/null || true"], text=True)
+        )
+
+    def _page_journal(self):
+        out = self._journal_warnings() or ""
+        lines = []
+        for ln in out.splitlines():
+            if ";" in ln:
+                ln = ln.split(";", 1)[-1]
+            lines.append(ln.strip())
+        return ("WARN", lines[:4])
+
+    def _render_current_page(self):
+        pages = [self._page_overview, self._page_systemd, self._page_dmesg, self._page_journal]
+        now = time.monotonic()
+        if (now - self._last_page_ts) > self.page_interval:
+            self.page_index = (self.page_index + 1) % len(pages)
+            self._last_page_ts = now
+        return pages[self.page_index]()
+
     def sender_loop(self):
         while not self.stop_event.is_set():
             with self.lock:
-                header = self.header
-                lines = list(self.lines)
-            # append dynamic system info
-            ip_v4, ssid, rssi = get_ip_info()
-            dyn = []
-            if ip_v4:
-                dyn.append(ip_v4.split("\n")[0][:21])
-            if ssid:
-                dyn.append(f"WiFi: {ssid}"[:21])
-            if rssi:
-                dyn.append(f"RSSI: {rssi}"[:21])
-            uptime = subprocess.check_output("awk '{print $1}' /proc/uptime", shell=True, text=True).strip()
-            dyn.append(f"Up: {float(uptime):.0f}s")
+                ov = self.overlay
+                if ov and time.monotonic() > ov.get("expires", 0):
+                    self.overlay = ov = None
+                if ov:
+                    header, lines = ov.get("header", ""), ov.get("lines", [])
+                else:
+                    header, lines = self._render_current_page()
 
             try:
-                self.oled.render_lines(header, lines + dyn)
+                self.oled.render_lines(header, lines)
             except Exception:
                 pass
+            # Opportunistically refresh e-paper at a slower cadence
+            try:
+                epd_itv = float(os.environ.get("EPD_UPDATE_INTERVAL", "60"))
+            except Exception:
+                epd_itv = 60.0
+            now = time.monotonic()
+            last_epd = getattr(self, "_last_epd", 0.0)
+            if self.epd and self.epd.enabled and (now - last_epd) >= epd_itv:
+                epd_lines = self._compose_epd_lines()
+                if self.epd.update(epd_lines):
+                    self._last_epd = now
             # Write health file atomically
             try:
                 status = {
@@ -260,9 +510,7 @@ class StatusDaemon:
                     "last_update": datetime.now().isoformat(timespec="seconds"),
                     "device_ready": bool(self.oled.device),
                     "last_error": (str(self.oled.last_init_err) if getattr(self.oled, 'last_init_err', None) else None),
-                    "ip": ip_v4.split("\n")[0] if ip_v4 else "",
-                    "ssid": ssid or "",
-                    "rssi": rssi or "",
+                    "page": getattr(self, 'page_index', 0),
                 }
                 tmp = STATUS_PATH + ".tmp"
                 with open(tmp, "w") as f:
@@ -284,9 +532,16 @@ class StatusDaemon:
                 msg = json.loads(data.decode('utf-8', 'ignore'))
                 header = msg.get('header') or msg.get('h') or ""
                 lines = msg.get('lines') or msg.get('l') or []
+                ttl = float(msg.get('ttl') or msg.get('t') or 6)
                 if isinstance(lines, str):
                     lines = [lines]
                 with self.lock:
+                    if header or lines:
+                        self.overlay = {
+                            "header": header[:20] if header else "",
+                            "lines": [str(x) for x in lines][:4],
+                            "expires": time.monotonic() + max(1.0, min(30.0, ttl)),
+                        }
                     if header:
                         self.header = header[:20]
                     if lines:
@@ -294,6 +549,28 @@ class StatusDaemon:
             except Exception:
                 # ignore malformed
                 pass
+
+    def journal_alerts_loop(self):
+        cmd = [
+            "bash", "-lc",
+            "journalctl -b -f -p warning --no-pager -o short 2>/dev/null"
+        ]
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+        except Exception:
+            return
+        for line in proc.stdout or []:
+            ln = line.strip()
+            if not ln:
+                continue
+            if ";" in ln:
+                ln = ln.split(";", 1)[-1].strip()
+            with self.lock:
+                self.overlay = {
+                    "header": "⚠️ WARN",
+                    "lines": [ln[:21]],
+                    "expires": time.monotonic() + 8.0,
+                }
 
     def run(self):
         def on_sig(signum, frame):
@@ -303,8 +580,9 @@ class StatusDaemon:
         signal.signal(signal.SIGINT, on_sig)
         t1 = threading.Thread(target=self.sender_loop, daemon=True)
         t2 = threading.Thread(target=self.receiver_loop, daemon=True)
-        t1.start(); t2.start()
-        t1.join(); t2.join()
+        t3 = threading.Thread(target=self.journal_alerts_loop, daemon=True)
+        t1.start(); t2.start(); t3.start()
+        t1.join(); t2.join(); t3.join()
 
 
 def main():

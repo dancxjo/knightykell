@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Workspace
 WORKDIR ${ROS_WS}
-COPY ros2_ws.repos ${ROS_WS}/ros2_ws.repos
+COPY docker/ros2_ws.repos ${ROS_WS}/ros2_ws.repos
 RUN mkdir -p src && \
     vcs import --input ros2_ws.repos src || true
 
@@ -48,16 +48,16 @@ RUN mkdir -p /var/log/ros2
 RUN mkdir -p /var/run/sshd
 
 # Entrypoint: source ROS and keep container alive by default
-COPY entrypoint.sh /entrypoint.sh
+COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
-COPY bringup.sh /opt/entry/bringup.sh
+COPY docker/bringup.sh /opt/entry/bringup.sh
 RUN chmod +x /opt/entry/bringup.sh
-COPY ../host/oled/oled_client.py /opt/entry/oled_client.py
+COPY host/oled/oled_client.py /opt/entry/oled_client.py
 RUN chmod +x /opt/entry/oled_client.py
-COPY ros2_oled_bridge.py /opt/entry/ros2_oled_bridge.py
+COPY docker/ros2_oled_bridge.py /opt/entry/ros2_oled_bridge.py
 RUN chmod +x /opt/entry/ros2_oled_bridge.py
-COPY ros_statusd.py /opt/entry/ros_statusd.py
+COPY docker/ros_statusd.py /opt/entry/ros_statusd.py
 RUN chmod +x /opt/entry/ros_statusd.py
-COPY cyclonedds.xml /opt/entry/cyclonedds.xml
+COPY docker/cyclonedds.xml /opt/entry/cyclonedds.xml
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/opt/entry/bringup.sh"]

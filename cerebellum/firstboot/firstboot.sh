@@ -18,17 +18,21 @@ elif [ -f /boot/armbianEnv.txt ]; then
   fi
 fi
 
-echo "[firstboot] enabling I2C and installing deps + docker (if needed)"
+echo "[firstboot] enabling I2C/SPI and installing deps + docker (if needed)"
 echo i2c-dev > /etc/modules-load.d/i2c-dev.conf
+echo spidev > /etc/modules-load.d/spidev.conf
 
 # Enable I2C for Armbian via overlays, or Raspberry Pi OS via config.txt
 if [ -f /boot/armbianEnv.txt ]; then
   if ! grep -q '^overlays=.*i2c' /boot/armbianEnv.txt; then
-    echo 'overlays=i2c1 i2c0' >> /boot/armbianEnv.txt || true
+    echo 'overlays=i2c1 i2c0 spi-spidev' >> /boot/armbianEnv.txt || true
   fi
 elif [ -f /boot/config.txt ]; then
   if ! grep -Eq '^(dtparam=i2c_arm=on|dtoverlay=i2c1)' /boot/config.txt; then
     echo 'dtparam=i2c_arm=on' >> /boot/config.txt || true
+  fi
+  if ! grep -q '^dtparam=spi=on' /boot/config.txt; then
+    echo 'dtparam=spi=on' >> /boot/config.txt || true
   fi
 fi
 
@@ -37,8 +41,8 @@ if ! command -v docker >/dev/null 2>&1; then
   apt-get update
   apt-get install -y --no-install-recommends \
     ca-certificates curl gnupg \
-    i2c-tools python3 python3-pil python3-luma.oled \
-    python3-pip
+    i2c-tools python3 python3-pil python3-luma.oled fonts-unifont \
+    python3-pip python3-rpi.gpio python3-spidev
   # Add Docker CE repo to get compose plugin if not present
   install -m 0755 -d /etc/apt/keyrings
   if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
@@ -56,11 +60,17 @@ if ! command -v docker >/dev/null 2>&1; then
     apt-get install -y --no-install-recommends docker.io || true
     apt-get install -y --no-install-recommends docker-compose-plugin || pip3 install --no-cache-dir docker-compose || true
   fi
+  # Waveshare e-Paper Python lib (best effort; pip install system-wide)
+  pip3 install --no-cache-dir waveshare-epd >/dev/null 2>&1 || true
   systemctl enable --now docker || true
 else
   # Ensure OLED libs present even if docker is preinstalled
   apt-get update
-  apt-get install -y --no-install-recommends i2c-tools python3 python3-pil python3-luma.oled || true
+  apt-get install -y --no-install-recommends \
+    i2c-tools python3 python3-pil python3-luma.oled fonts-unifont \
+    python3-rpi.gpio python3-spidev || true
+  # Install waveshare-epd regardless of docker presence
+  pip3 install --no-cache-dir waveshare-epd >/dev/null 2>&1 || true
   # Ensure compose present in some form
   if ! docker compose version >/dev/null 2>&1 && ! command -v docker-compose >/dev/null 2>&1; then
     install -m 0755 -d /etc/apt/keyrings
@@ -83,6 +93,11 @@ usermod -aG docker ${SUDO_USER:-${USER:-root}} || true
 
 # Restart OLED daemon if present (to pick up luma libs)
 systemctl restart oled-statusd || true
+
+# Convenience command in PATH
+install -m 0755 /opt/cerebellum/oled/oledctl /usr/local/bin/oledctl 2>/dev/null || true
+
+
 
 # Pre-load image if present
 if [ -f /opt/cerebellum/image.tar ]; then
