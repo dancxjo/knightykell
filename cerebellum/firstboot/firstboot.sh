@@ -16,10 +16,19 @@ fi
 echo "[firstboot] enabling I2C and installing deps + docker (if needed)"
 echo i2c-dev > /etc/modules-load.d/i2c-dev.conf
 
-# Enable I2C for Raspberry Pi OS via config.txt
-if [ -f /boot/config.txt ]; then
-  if ! grep -Eq '^(dtparam=i2c_arm=on|dtoverlay=i2c1)' /boot/config.txt; then
-    echo 'dtparam=i2c_arm=on' >> /boot/config.txt || true
+# Enable I2C for Raspberry Pi OS via config.txt (handle Bookworm path)
+CONFIG_TXT="/boot/config.txt"
+if [ -f /boot/firmware/config.txt ]; then
+  CONFIG_TXT="/boot/firmware/config.txt"
+fi
+if [ -f "$CONFIG_TXT" ]; then
+  # Ensure either dtparam=i2c_arm=on or dtoverlay=i2c1 is present
+  if ! grep -Eq '^(dtparam=i2c_arm=on|dtoverlay=i2c1)' "$CONFIG_TXT"; then
+    echo 'dtparam=i2c_arm=on' >> "$CONFIG_TXT" || true
+  fi
+  # Also ensure explicit overlay line for newer firmwares
+  if ! grep -Eq '^dtoverlay=i2c1' "$CONFIG_TXT"; then
+    echo 'dtoverlay=i2c1' >> "$CONFIG_TXT" || true
   fi
 fi
 

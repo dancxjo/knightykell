@@ -313,11 +313,22 @@ if [ "$PREINSTALL_DOCKER" = "1" ]; then
   done
 fi
 
-# Enable I2C on Raspberry Pi OS (config.txt)
-if [ -f "$BOOT_MNT/config.txt" ]; then
-  grep -Eq '^(dtparam=i2c_arm=on|dtoverlay=i2c1)' "$BOOT_MNT/config.txt" || \
-    echo "dtparam=i2c_arm=on" | sudo tee -a "$BOOT_MNT/config.txt" >/dev/null
+# Enable I2C on Raspberry Pi OS (config.txt) — handle Bookworm path
+CFG_PATH="$BOOT_MNT/config.txt"
+if [ -f "$BOOT_MNT/firmware/config.txt" ]; then
+  CFG_PATH="$BOOT_MNT/firmware/config.txt"
 fi
+if [ -f "$CFG_PATH" ]; then
+  grep -Eq '^(dtparam=i2c_arm=on|dtoverlay=i2c1)' "$CFG_PATH" || \
+    echo "dtparam=i2c_arm=on" | sudo tee -a "$CFG_PATH" >/dev/null
+  grep -Eq '^dtoverlay=i2c1' "$CFG_PATH" || \
+    echo "dtoverlay=i2c1" | sudo tee -a "$CFG_PATH" >/dev/null
+fi
+
+# Ensure i2c-dev module is loaded on boot
+echo "[build] enabling i2c-dev kernel module"
+sudo mkdir -p "$ROOT_MNT/etc/modules-load.d"
+echo i2c-dev | sudo tee "$ROOT_MNT/etc/modules-load.d/i2c-dev.conf" >/dev/null
 
 echo "[build] unmounting and finalizing"
 sync

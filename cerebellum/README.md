@@ -73,6 +73,7 @@ Notes
 - `ros2_ws.repos` seeds source-based packages; apt installs cover commonly used drivers.
 - The MPU6050 ROS 2 driver varies; update `ros2_ws.repos` to the implementation you use.
 - Ensure I2C is enabled on the host: `sudo raspi-config nonint do_i2c 0` or add `dtparam=i2c_arm=on` to `/boot/config.txt` and create `/etc/modules-load.d/i2c-dev.conf` with `i2c-dev`; reboot. Verify with `ls /dev/i2c-*` and `i2cdetect -y 1`.
+  - On Raspberry Pi OS Bookworm the file may be `/boot/firmware/config.txt`. The image builder and first-boot script now also add `dtoverlay=i2c1` for RPi4 and create `/etc/modules-load.d/i2c-dev.conf`.
 
 Time sync (NTP)
 - First-boot now enables systemd-timesyncd and waits briefly for sync before starting Docker pulls.

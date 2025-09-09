@@ -196,7 +196,7 @@ class OLED:
         for fp in candidate_fonts:
             try:
                 if os.path.isfile(fp):
-                    self.font_ticker = ImageFont.truetype(fp, size=ticker_size)
+                    self.font_ticker = ImageFont.truetype(fp, size=10)
                     break
             except Exception:
                 continue
@@ -220,9 +220,9 @@ class OLED:
         self.ticker_lines = _get_int("OLED_TICKER_LINES", 3)
         # frame delay (seconds)
         try:
-            self.frame_delay = float(os.environ.get("OLED_FRAME_DELAY", "0.25"))
+            self.frame_delay = float(os.environ.get("OLED_FRAME_DELAY", "0.1"))
         except Exception:
-            self.frame_delay = 0.25
+            self.frame_delay = 0.1
 
         self._try_init()
 
@@ -343,7 +343,7 @@ class OLED:
         # Top-right tiny logo (use Shavian-capable font when available)
         try:
             # Include Shavian namer dot (·) to mark a proper name
-            logo = os.environ.get("OLED_LOGO_TEXT", "\u00B7𐑯𐑲𐑑𐑦𐑒𐑧𐑤")
+            logo = os.environ.get("OLED_LOGO_TEXT", "𐑯𐑲𐑑𐑦𐑒𐑧𐑤")
             font_logo = self.font_shavian or self.font_tiny or self.font_small
             if logo and font_logo:
                 lw = int(self.draw.textlength(logo, font=font_logo)) if hasattr(self.draw, 'textlength') else self.draw.textbbox((0,0), logo, font=font_logo)[2]
@@ -623,15 +623,15 @@ class StatusDaemon:
     def _page_overview(self):
         header = self.header
         lines = list(self.lines)
-        # Remove IP address from body content; focus on other info
+        # Remove IP address from body content; focus on other info and avoid emoji icons
         ip_v4, ssid, rssi = get_ip_info()
         if ssid:
-            lines.append(f"📶 {ssid}"[:21])
+            lines.append(f"SSID: {ssid}"[:21])
         if rssi:
-            lines.append(f"📡 {rssi}"[:21])
+            lines.append(f"RSSI: {rssi}"[:21])
         try:
             uptime = subprocess.check_output("awk '{print $1}' /proc/uptime", shell=True, text=True).strip()
-            lines.append(f"🕒 {float(uptime):.0f}s")
+            lines.append(f"uptime: {float(uptime):.0f}s")
         except Exception:
             pass
         return (header, lines)
@@ -650,22 +650,13 @@ class StatusDaemon:
 
     def _page_systemd(self):
         state, failed = self._systemd_summary() or ("", "")
-        icon = {
-            "running": "✅",
-            "degraded": "⚠️",
-            "starting": "⏳",
-            "maintenance": "🛠",
-            "stopping": "⏹",
-            "offline": "⚫",
-            "failed": "❌",
-        }.get(state, "ℹ️")
-        lines = [f"𐑕𐑑𐑱𐑑: {state}"]
+        lines = [f"state: {state}"]
         if failed:
             parts = failed.split()
-            lines.append(f"𐑓𐑱𐑤𐑛: {len(parts)}")
+            lines.append(f"failed: {len(parts)}")
             for u in parts[:2]:
-                lines.append(f"✗ {u}")
-        return (f"𐑕𐑦𐑕𐑑𐑩𐑥 {icon}", lines)
+                lines.append(f"x {u}")
+        return ("system", lines)
 
     def _dmesg_tail(self):
         return self._cached(
@@ -791,7 +782,7 @@ class StatusDaemon:
                 ln = ln.split(";", 1)[-1].strip()
             with self.lock:
                 self.overlay = {
-                    "header": "⚠️ WARN",
+                    "header": "WARN",
                     "lines": [ln[:21]],
                     "expires": time.monotonic() + 8.0,
                 }
