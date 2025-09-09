@@ -6,12 +6,15 @@ services:
       args:
         ROS_DISTRO: ${ROS_DISTRO:-jazzy}
         ROS_BASE_IMAGE: ${ROS_BASE_IMAGE:-ros:${ROS_DISTRO:-jazzy}-ros-base}
+        GIT_USER_NAME: ${GIT_USER_NAME:-}
+        GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
     image: knightykell/monitor:${ROS_DISTRO:-jazzy}
     network_mode: host
     environment:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - CYCLONEDDS_URI=file:///opt/entry/cyclonedds.xml
+      - SSH_AUTH_SOCK=${SSH_AUTH_SOCK}
       - DISPLAY
       - WAYLAND_DISPLAY
       - XDG_RUNTIME_DIR
@@ -22,6 +25,10 @@ services:
       - ~/.Xauthority:/root/.Xauthority:ro
       - ./cyclonedds.xml:/opt/entry/cyclonedds.xml:ro
       - ros_logs:/var/log/ros2
+      # Optional: mount host git identity and SSH keys for pushing from container
+      - ${HOME}/.gitconfig:/root/.gitconfig:ro
+      - ${HOME}/.ssh:/root/.ssh:ro
+      - ${SSH_AUTH_SOCK}:${SSH_AUTH_SOCK}
     privileged: false
     ipc: host
 volumes:

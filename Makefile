@@ -11,9 +11,21 @@ export BUILDKIT_PROGRESS
 ROS_DISTRO ?= jazzy
 ROS_BASE_IMAGE ?= ros:$(ROS_DISTRO)-ros-base
 
+# Git identity for in-image config (optional)
+GIT_USER_NAME ?=
+GIT_USER_EMAIL ?=
+
 # Cross-build platform configuration (use arm64 to debug Pi images locally)
 CEREBELLUM_PLATFORM ?= linux/arm64
 MONITOR_PLATFORM ?=
+
+# Common build args passed to docker builds
+COMMON_BUILD_ARGS = \
+  --build-arg ROS_DISTRO=$(ROS_DISTRO) \
+  --build-arg ROS_BASE_IMAGE="$(ROS_BASE_IMAGE)" \
+  --build-arg BUILDKIT_INLINE_CACHE=1 \
+  --build-arg GIT_USER_NAME="$(GIT_USER_NAME)" \
+  --build-arg GIT_USER_EMAIL="$(GIT_USER_EMAIL)"
 
 # --- Cerebellum image build ---
 .PHONY: cerebellum-img cerebellum-cache-clean
@@ -59,9 +71,7 @@ compose_guard_cerebellum = @if [ -z "$(CEREBELLUM_COMPOSE)" ]; then \
 monitor-build:
 	$(compose_guard_monitor)
 	DOCKER_DEFAULT_PLATFORM=$(MONITOR_PLATFORM) \
-	  $(MONITOR_COMPOSE) build \
-	    --build-arg ROS_DISTRO=$(ROS_DISTRO) \
-	    --build-arg ROS_BASE_IMAGE="$(ROS_BASE_IMAGE)"
+	  $(MONITOR_COMPOSE) build $(COMMON_BUILD_ARGS)
 
 monitor-up:
 	$(compose_guard_monitor)
@@ -87,15 +97,42 @@ monitor-rqt:
 	chmod +x monitor/run_rqt.sh
 	./monitor/run_rqt.sh
 
-# --- Cerebellum build helpers ---
-.PHONY: cerebellum-build
+# --- Cerebellum build + lifecycle helpers ---
+.PHONY: cerebellum-build cerebellum-up cerebellum-update cerebellum-flash
 
 cerebellum-build:
 	$(compose_guard_cerebellum)
 	DOCKER_DEFAULT_PLATFORM=$(CEREBELLUM_PLATFORM) \
-	  $(CEREBELLUM_COMPOSE) build \
-	    --build-arg ROS_DISTRO=$(ROS_DISTRO) \
-	    --build-arg ROS_BASE_IMAGE="$(ROS_BASE_IMAGE)" cerebellum
+	  $(CEREBELLUM_COMPOSE) build $(COMMON_BUILD_ARGS) cerebellum
+
+# Bring up/refresh the cerebellum stack on this host
+cerebellum-up:
+	$(compose_guard_cerebellum)
+	$(CEREBELLUM_COMPOSE) up -d cerebellum neo4j qdrant
+
+# Rebuild (or pull) and restart cerebellum services
+cerebellum-update:
+	$(compose_guard_cerebellum)
+	$(CEREBELLUM_COMPOSE) pull cerebellum neo4j qdrant || true
+	DOCKER_DEFAULT_PLATFORM=$(CEREBELLUM_PLATFORM) \
+	  $(CEREBELLUM_COMPOSE) up -d --build cerebellum neo4j qdrant
+
+# Flash the built OS image to a target block device (guarded)
+# Usage: make cerebellum-flash DEVICE=/dev/sdX
+cerebellum-flash:
+	@if [ -z "$(DEVICE)" ]; then \
+	  echo "ERROR: must set DEVICE=/dev/sdX (target device)" >&2; exit 2; \
+	fi; \
+	ROOTDISK=$$(lsblk -no PKNAME / 2>/dev/null | head -n1 || true); \
+	TARGET=$$(basename "$(DEVICE)"); \
+	if [ "$$ROOTDISK" = "$$TARGET" ]; then \
+	  echo "ABORT: refusing to write to the current root disk ($(DEVICE))." >&2; exit 3; \
+	fi; \
+	if [ ! -f "$(IMG_OUT)" ]; then \
+	  echo "ERROR: image not found: $(IMG_OUT). Build it with 'make cerebellum' first." >&2; exit 4; \
+	fi; \
+	$(SUDO) sh -c 'sync; dd if="$(IMG_OUT)" of="$(DEVICE)" bs=4M status=progress conv=fsync'; \
+	$(SUDO) sync; echo "Flashed $(IMG_OUT) -> $(DEVICE)";
 
 # (QEMU emulation targets removed per request)
 
@@ -140,8 +177,6 @@ configure:
 	@echo "ROS: ROS_DISTRO=$(ROS_DISTRO), ROS_BASE_IMAGE=$(ROS_BASE_IMAGE)"
 	@echo "Platforms: MONITOR_PLATFORM=$(MONITOR_PLATFORM), CEREBELLUM_PLATFORM=$(CEREBELLUM_PLATFORM)"
 	@echo "IMG_OUT: $(IMG_OUT)"
-	@echo "PREFIX: $(PREFIX)"
-	@echo "SYSTEMD_DIR: $(SYSTEMD_DIR)"
 	@echo "Done."
 
 # build: build both dev images (monitor + cerebellum)
@@ -151,9 +186,10 @@ build: monitor-build
 # rebuild: force rebuild images without cache
 rebuild:
 	$(compose_guard_monitor)
-	$(MONITOR_COMPOSE) build --no-cache || true
+	$(MONITOR_COMPOSE) build --no-cache $(COMMON_BUILD_ARGS) || true
 	$(compose_guard_cerebellum)
-	$(CEREBELLUM_COMPOSE) build --no-cache cerebellum || true
+	DOCKER_DEFAULT_PLATFORM=$(CEREBELLUM_PLATFORM) \
+	  $(CEREBELLUM_COMPOSE) build --no-cache $(COMMON_BUILD_ARGS) cerebellum || true
 	@echo "Rebuild complete."
 
 # run/launch: bring up the monitor dev stack (GUI tools available separately)
@@ -182,6 +218,10 @@ help:
 	@echo "  make monitor       # build and start monitor stack"
 	@echo "  make cerebellum    # build Raspberry Pi OS Lite image"
 	@echo "  make cerebellum-burn # open Raspberry Pi Imager and show image"
+	@echo "  make cerebellum-build # build the cerebellum Docker image"
+	@echo "  make cerebellum-up   # start cerebellum stack (docker)"
+	@echo "  make cerebellum-update # pull/build+restart cerebellum stack"
+	@echo "  make cerebellum-flash DEVICE=/dev/sdX # flash OS image to device (guarded)"
 	@echo "  make run           # alias to start monitor stack"
 	@echo "  make launch        # alias for run"
 	@echo "  make test          # run tests (placeholder)"

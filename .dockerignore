@@ -1,0 +1,24 @@
+# Speed up Docker builds by excluding large or irrelevant paths from context
+
+# VCS metadata is intentionally included so the repo is embedded in images
+# .git
+
+# Python caches
+**/__pycache__/
+*.pyc
+
+# Node and other common noisy dirs
+**/node_modules/
+
+# Build artifacts and image outputs
+cerebellum/out/
+cerebellum/work/
+cerebellum/tools/out/
+cerebellum/tools/work/
+monitor/out/
+monitor/work/
+
+# Editor/IDE artifacts
+.vscode/
+.idea/
+*.swp

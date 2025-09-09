@@ -10,7 +10,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ROS_DISTRO=${ROS_DISTRO} \
     ROS_WS=/opt/ros_ws
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     git curl ca-certificates tzdata \
     python3-pip python3-colcon-common-extensions python3-vcstool \
     build-essential cmake \
@@ -35,10 +37,13 @@ RUN mkdir -p src && \
     vcs import --input ros2_ws.repos src || true
 
 # Resolve deps and build (best-effort)
-RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
-    rosdep update && \
-    rosdep install --from-paths src --ignore-src -y --rosdistro ${ROS_DISTRO} || true && \
-    colcon build --merge-install || true
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    --mount=type=cache,target=/root/.cache,sharing=locked \
+    bash -lc '. /opt/ros/${ROS_DISTRO}/setup.sh && \
+      rosdep update && \
+      rosdep install --from-paths src --ignore-src -y --rosdistro ${ROS_DISTRO} || true && \
+      colcon build --merge-install || true'
 
 # Runtime env
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /etc/bash.bashrc && \
@@ -49,6 +54,21 @@ ENV ROS_LOG_DIR=/var/log/ros2 \
 
 RUN mkdir -p /var/log/ros2
 RUN mkdir -p /var/run/sshd
+
+# -----------------------------------------------------------------------------
+# Include the full source repo inside the image for convenient in-container dev
+# -----------------------------------------------------------------------------
+ARG REPO_DIR=/opt/src/knightykell
+ARG GIT_USER_NAME=""
+ARG GIT_USER_EMAIL=""
+RUN mkdir -p ${REPO_DIR}
+# Copy the entire build context (the repository root as provided by compose)
+COPY . ${REPO_DIR}
+# Configure git identity if provided and mark repo as safe
+RUN if [ -n "${GIT_USER_NAME}" ]; then git config --global user.name "${GIT_USER_NAME}"; fi && \
+    if [ -n "${GIT_USER_EMAIL}" ]; then git config --global user.email "${GIT_USER_EMAIL}"; fi && \
+    git config --global init.defaultBranch main && \
+    git config --global --add safe.directory ${REPO_DIR}
 
 # Entrypoint: source ROS and keep container alive by default
 COPY docker/entrypoint.sh /entrypoint.sh
