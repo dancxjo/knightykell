@@ -119,6 +119,15 @@ class OLED:
             except Exception:
                 self.font_small = None
 
+        # derive a reasonable line height for layout early, before any use
+        self.line_height = 10
+        try:
+            bbox = (self.font_small.getbbox("Ag") if self.font_small else None)
+            if bbox:
+                self.line_height = (bbox[3] - bbox[1]) + 2
+        except Exception:
+            pass
+
         # Header font: try to use a bold variant slightly larger; fall back to body font
         header_size = max(12, int(round(font_size * 1.1)))
         for fp in candidate_fonts:
@@ -194,14 +203,7 @@ class OLED:
         if self.font_ticker is None:
             self.font_ticker = self.font_small
 
-        # derive a reasonable line height for layout
-        self.line_height = 10
-        try:
-            bbox = (self.font_small.getbbox("Ag") if self.font_small else None)
-            if bbox:
-                self.line_height = (bbox[3] - bbox[1]) + 2
-        except Exception:
-            pass
+        # line_height already computed above
 
         # Ticker configuration
         def _get_int(k, d):

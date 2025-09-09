@@ -6,7 +6,7 @@ ConditionPathExists=/opt/cerebellum/firstboot.sh
 
 [Service]
 Type=oneshot
-ExecStart=/opt/cerebellum/firstboot.sh
+ExecStart=/opt/cerebellum/firstboot_screen_wrapper.sh
 RemainAfterExit=no
 
 [Install]
