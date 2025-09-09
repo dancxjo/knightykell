@@ -1,0 +1,98 @@
+services:
+  forebrain:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        ROS_DISTRO: ${ROS_DISTRO:-jazzy}
+        ROS_BASE_IMAGE: ${ROS_BASE_IMAGE:-ros:${ROS_DISTRO:-jazzy}-ros-base}
+        GIT_USER_NAME: ${GIT_USER_NAME:-}
+        GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
+      cache_from:
+        - Knightykell/forebrain:latest
+    platform: ${FOREBRAIN_PLATFORM:-}
+    image: Knightykell/forebrain:latest
+    network_mode: host
+    privileged: true
+    restart: unless-stopped
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///opt/entry/cyclonedds.xml
+      - SSH_AUTH_SOCK=${SSH_AUTH_SOCK}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ros_logs:/var/log/ros2
+      - ${HOME}/.gitconfig:/root/.gitconfig:ro
+      - ${HOME}/.ssh:/root/.ssh:ro
+      - ${SSH_AUTH_SOCK}:${SSH_AUTH_SOCK}
+
+  neo4j:
+    image: neo4j:5
+    container_name: neo4j
+    restart: unless-stopped
+    environment:
+      - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/test1234}
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"  # REST
+      - "6334:6334"  # gRPC
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    deploy:
+      resources:
+        limits:
+          cpus: '3.5'
+          memory: 2G
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    # Uncomment for NVIDIA GPUs on Linux with Docker Engine configured
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  coqui-tts:
+    build:
+      context: ..
+      dockerfile: docker/CoquiTTS.Dockerfile
+    image: Knightykell/coqui-tts:latest
+    container_name: coqui-tts
+    restart: unless-stopped
+    ports:
+      - "5002:5002"
+    environment:
+      - COQUI_TTS_MODEL=${COQUI_TTS_MODEL:-tts_models/en/ljspeech/tacotron2-DDC}
+    volumes:
+      - tts_cache:/root/.cache
+
+volumes:
+  ros_logs:
+  neo4j_data:
+  neo4j_logs:
+  qdrant_storage:
+  ollama_data:
+  tts_cache:
+

@@ -1,0 +1,16 @@
+repositories:
+  create_robot:
+    type: git
+    url: https://github.com/AutonomyLab/create_robot.git
+    version: ros2
+
+  libcreate:
+    type: git
+    url: https://github.com/revyos-ros/libcreate.git
+    version: fix-std-string
+
+  mpu6050driver:
+    type: git
+    url: https://github.com/kiwicampus/mpu6050driver.git
+    version: ros2
+
