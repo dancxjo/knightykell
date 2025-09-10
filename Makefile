@@ -1,3 +1,36 @@
+# --- Forebrain image build ---
+.PHONY: forebrain-img forebrain-cache-clean forebrain-flash
+
+FOREBRAIN_IMG_OUT ?= forebrain/tools/work/ubuntu_forebrain.img
+FOREBRAIN_IMAGE_TAG ?= Knightykell/forebrain:latest
+FOREBRAIN_INCLUDE_SOURCE ?= 1
+
+forebrain-img:
+	@echo "Building Forebrain (Ubuntu 24.04, x86_64) image into $(FOREBRAIN_IMG_OUT)"
+	forebrain/tools/build_ubuntu_forebrain_image.sh
+
+forebrain-cache-clean:
+	rm -f forebrain/out/cache/alpine_latest.archive || true
+	@echo "forebrain image cache cleared (forebrain/out/cache)"
+
+# Flash the built Alpine image to a target block device (guarded)
+# Usage: make forebrain-flash DEVICE=/dev/sdX
+forebrain-flash:
+	@if [ -z "$(DEVICE)" ]; then \
+	  echo "ERROR: must set DEVICE=/dev/sdX (target device)" >&2; exit 2; \
+	fi; \
+	ROOTDISK=$$(lsblk -no PKNAME / 2>/dev/null | head -n1 || true); \
+	TARGET=$$(basename "$(DEVICE)"); \
+	if [ "$$ROOTDISK" = "$$TARGET" ]; then \
+	  echo "ABORT: refusing to write to the current root disk ($(DEVICE))." >&2; exit 3; \
+	fi; \
+	if [ ! -f "$(FOREBRAIN_IMG_OUT)" ]; then \
+	  echo "ERROR: image not found: $(FOREBRAIN_IMG_OUT). Build it with 'make forebrain-img' first." >&2; exit 4; \
+	fi; \
+	$(SUDO) sh -c 'sync; dd if="$(FOREBRAIN_IMG_OUT)" of="$(DEVICE)" bs=4M status=progress conv=fsync'; \
+	$(SUDO) sync; echo "Flashed $(FOREBRAIN_IMG_OUT) -> $(DEVICE)";
+
+# (You should implement forebrain/tools/build_ubuntu_forebrain_image.sh to build and partition the Ubuntu image as needed)
 # Default goal for Makefile Tools and CLI
 .DEFAULT_GOAL := all
 

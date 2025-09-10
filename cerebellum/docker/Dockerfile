@@ -28,6 +28,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ros-${ROS_DISTRO}-image-view \
     ros-${ROS_DISTRO}-hls-lfcd-lds-driver \
     ros-${ROS_DISTRO}-diagnostic-updater \
+    ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
     && rm -rf /var/lib/apt/lists/*
 
 # Workspace
@@ -41,9 +42,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     --mount=type=cache,target=/root/.cache,sharing=locked \
     bash -lc '. /opt/ros/${ROS_DISTRO}/setup.sh && \
-      rosdep update && \
-      rosdep install --from-paths src --ignore-src -y --rosdistro ${ROS_DISTRO} || true && \
-      colcon build --merge-install || true'
+    rosdep update && \
+    rosdep install --from-paths src --ignore-src -y --rosdistro ${ROS_DISTRO} || true && \
+    colcon build --merge-install || true'
 
 # Runtime env
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /etc/bash.bashrc && \
