@@ -1,0 +1,12 @@
+[Unit]
+Description=BANKS first boot provisioning
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/banks/firstboot.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -14,8 +14,11 @@ from scripts.setup_host import (
     get_services,
     install_ros2,
     install_zeno,
+    install_voice_packages,
     launch_hrs04,
     launch_display,
+    launch_logticker,
+    launch_voice,
     load_config,
     setup_workspace,
 )
@@ -26,12 +29,12 @@ def test_get_services_returns_configured_services(tmp_path):
     config_path.write_text(
         """
 [hosts]
-[hosts.alpha]
+[hosts.brainstem]
 services = ["core", "monitor"]
 """
     )
     config = load_config(config_path)
-    assert get_services("alpha", config) == ["core", "monitor"]
+    assert get_services("brainstem", config) == ["core", "monitor"]
 
 
 def test_get_services_unknown_host_returns_empty(tmp_path):
@@ -46,15 +49,15 @@ def test_get_service_config_returns_pins(tmp_path):
     p.write_text(
         """
 [hosts]
-[hosts.alpha]
+[hosts.brainstem]
 services=["hrs04"]
-[hosts.alpha.hrs04]
+[hosts.brainstem.hrs04]
 trig_pin=1
 echo_pin=2
 """
     )
     cfg = load_config(p)
-    assert get_service_config("alpha", "hrs04", cfg)["trig_pin"] == 1
+    assert get_service_config("brainstem", "hrs04", cfg)["trig_pin"] == 1
 
 
 def test_ensure_ssh_keys_invokes_ssh_keygen(monkeypatch, tmp_path):
@@ -108,6 +111,16 @@ def test_install_zeno_installs_zenoh():
 
     install_zeno(fake_run)
     assert ["pip", "install", "zenoh"] in calls
+
+
+def test_install_voice_packages_installs_espeak():
+    calls = []
+
+    def fake_run(cmd, check):
+        calls.append(cmd)
+
+    install_voice_packages(fake_run)
+    assert ["apt-get", "install", "-y", "espeak-ng", "mbrola", "mbrola-us1"] in calls
 
 
 def test_ensure_service_user_adds_user(monkeypatch):
@@ -176,17 +189,45 @@ def test_launch_display_creates_systemd_unit(monkeypatch, tmp_path):
     assert ["systemctl", "enable", "--now", "banks-display.service"] in calls
 
 
+def test_launch_voice_creates_systemd_unit(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr("scripts.setup_host.SYSTEMD_DIR", tmp_path)
+
+    def fake_run(cmd, check):
+        calls.append(cmd)
+
+    launch_voice(fake_run)
+    unit = tmp_path / "banks-voice.service"
+    assert unit.exists()
+    assert "voice_service.py" in unit.read_text()
+    assert ["systemctl", "enable", "--now", "banks-voice.service"] in calls
+
+
+def test_launch_logticker_creates_systemd_unit(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr("scripts.setup_host.SYSTEMD_DIR", tmp_path)
+
+    def fake_run(cmd, check):
+        calls.append(cmd)
+
+    launch_logticker(fake_run)
+    unit = tmp_path / "banks-logticker.service"
+    assert unit.exists()
+    assert "log_ticker.py" in unit.read_text()
+    assert ["systemctl", "enable", "--now", "banks-logticker.service"] in calls
+
+
 def test_main_launches_configured_services(monkeypatch):
     config = {
         "hosts": {
-            "alpha": {
+            "brainstem": {
                 "services": ["hrs04"],
                 "hrs04": {"trig_pin": 3, "echo_pin": 4},
             }
         }
     }
     monkeypatch.setattr("scripts.setup_host.load_config", lambda: config)
-    monkeypatch.setattr("scripts.setup_host.socket.gethostname", lambda: "alpha")
+    monkeypatch.setattr("scripts.setup_host.socket.gethostname", lambda: "brainstem")
     monkeypatch.setattr("scripts.setup_host.ensure_service_user", lambda: None)
     monkeypatch.setattr("scripts.setup_host.clone_repo", lambda: None)
     monkeypatch.setattr("scripts.setup_host.setup_workspace", lambda: None)
@@ -206,14 +247,14 @@ def test_main_launches_configured_services(monkeypatch):
 def test_main_launches_display_service(monkeypatch):
     config = {
         "hosts": {
-            "alpha": {
+            "brainstem": {
                 "services": ["display"],
                 "display": {"topics": ["/range"]},
             }
         }
     }
     monkeypatch.setattr("scripts.setup_host.load_config", lambda: config)
-    monkeypatch.setattr("scripts.setup_host.socket.gethostname", lambda: "alpha")
+    monkeypatch.setattr("scripts.setup_host.socket.gethostname", lambda: "brainstem")
     monkeypatch.setattr("scripts.setup_host.ensure_service_user", lambda: None)
     monkeypatch.setattr("scripts.setup_host.clone_repo", lambda: None)
     monkeypatch.setattr("scripts.setup_host.setup_workspace", lambda: None)
@@ -228,3 +269,29 @@ def test_main_launches_display_service(monkeypatch):
 
     main()
     assert launched == {"topics": ["/range"]}
+
+
+def test_main_launches_voice_and_logticker(monkeypatch):
+    config = {"hosts": {"brainstem": {"services": ["voice", "logticker"]}}}
+    monkeypatch.setattr("scripts.setup_host.load_config", lambda: config)
+    monkeypatch.setattr("scripts.setup_host.socket.gethostname", lambda: "brainstem")
+    monkeypatch.setattr("scripts.setup_host.ensure_service_user", lambda: None)
+    monkeypatch.setattr("scripts.setup_host.clone_repo", lambda: None)
+    monkeypatch.setattr("scripts.setup_host.setup_workspace", lambda: None)
+    monkeypatch.setattr("scripts.setup_host.ensure_ssh_keys", lambda: None)
+    monkeypatch.setattr("scripts.setup_host.install_ros2", lambda: None)
+    monkeypatch.setattr("scripts.setup_host.install_zeno", lambda: None)
+    called = {"pkg": False, "voice": False, "tick": False}
+    monkeypatch.setattr(
+        "scripts.setup_host.install_voice_packages", lambda: called.__setitem__("pkg", True)
+    )
+    monkeypatch.setattr(
+        "scripts.setup_host.launch_voice", lambda: called.__setitem__("voice", True)
+    )
+    monkeypatch.setattr(
+        "scripts.setup_host.launch_logticker", lambda: called.__setitem__("tick", True)
+    )
+    from scripts.setup_host import main
+
+    main()
+    assert all(called.values())

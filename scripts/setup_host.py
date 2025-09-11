@@ -2,8 +2,8 @@
 """Host-specific setup utilities for BANKS ROS2 deployments.
 
 Examples:
-    >>> cfg = {"hosts": {"alpha": {"services": ["core"]}}}
-    >>> get_services("alpha", cfg)
+    >>> cfg = {"hosts": {"brainstem": {"services": ["core"]}}}
+    >>> get_services("brainstem", cfg)
     ['core']
 """
 
@@ -35,9 +35,9 @@ def load_config(path: pathlib.Path | str = CONFIG_PATH) -> dict:
 
     Examples:
         >>> p = pathlib.Path('sample.toml')
-        >>> _ = p.write_text('[hosts]\n[hosts.alpha]\nservices=["core"]')
+        >>> _ = p.write_text('[hosts]\n[hosts.brainstem]\nservices=["core"]')
         >>> cfg = load_config(p)
-        >>> cfg['hosts']['alpha']['services']
+        >>> cfg['hosts']['brainstem']['services']
         ['core']
     """
     with open(path, "rb") as fh:
@@ -78,10 +78,10 @@ def get_service_config(hostname: str, service: str, config: dict) -> dict:
     Examples:
         >>> cfg = {
         ...     'hosts': {
-        ...         'alpha': {'services': ['hrs04'], 'hrs04': {'trig_pin': 1}}
+        ...         'brainstem': {'services': ['hrs04'], 'hrs04': {'trig_pin': 1}}
         ...     }
         ... }
-        >>> get_service_config('alpha', 'hrs04', cfg)['trig_pin']
+        >>> get_service_config('brainstem', 'hrs04', cfg)['trig_pin']
         1
     """
     return config.get("hosts", {}).get(hostname, {}).get(service, {})
@@ -239,6 +239,41 @@ def install_zeno(run=subprocess.run) -> None:
     run(["pip", "install", "zenoh"], check=True)
 
 
+def install_voice_packages(run=subprocess.run) -> None:
+    """Install speech synthesis packages.
+
+    Args:
+        run: Callable used to execute shell commands.
+
+    Examples:
+        >>> calls = []
+        >>> install_voice_packages(lambda cmd, check: calls.append(cmd))
+        >>> calls[0][:3]
+        ['apt-get', 'install', '-y']
+    """
+    run(["apt-get", "install", "-y", "espeak-ng", "mbrola", "mbrola-us1"], check=True)
+
+
+def launch_voice(run=subprocess.run) -> None:
+    """Install systemd unit for queued text-to-speech.
+
+    Examples:
+        >>> launch_voice(lambda cmd, check: None)  # doctest: +SKIP
+    """
+    cmd = ["python3", str(REPO_DIR / "scripts" / "voice_service.py")]
+    install_service_unit("voice", cmd, run)
+
+
+def launch_logticker(run=subprocess.run) -> None:
+    """Install systemd unit publishing logs to the voice service.
+
+    Examples:
+        >>> launch_logticker(lambda cmd, check: None)  # doctest: +SKIP
+    """
+    cmd = ["python3", str(REPO_DIR / "scripts" / "log_ticker.py")]
+    install_service_unit("logticker", cmd, run)
+
+
 def main() -> None:
     """Entry point for host setup."""
     cfg = load_config()
@@ -253,12 +288,18 @@ def main() -> None:
     ensure_ssh_keys()
     install_ros2()
     install_zeno()
+    if "voice" in services or "logticker" in services:
+        install_voice_packages()
     for svc in services:
         scfg = get_service_config(host, svc, cfg)
         if svc == "hrs04":
             launch_hrs04(scfg)
         elif svc == "display":
             launch_display(scfg)
+        elif svc == "voice":
+            launch_voice()
+        elif svc == "logticker":
+            launch_logticker()
         else:
             print(f"Unknown service {svc}")
     print(f"Installed services: {', '.join(services)}")

@@ -7,3 +7,7 @@
 - Avoid `ls -R`; use `rg` or targeted `ls` instead to navigate.
 - Create service user `pete` and a ROS2 workspace during host provisioning.
 - Generate systemd units so ROS2 services launch at boot.
+- Use `make image HOSTS="<names>"` to build Raspberry Pi images for hosts.
+- Mark Raspberry Pi hosts with `image = "rpi"` in `hosts.toml`; hosts without it won't get images but still provision at boot.
+- Install speech packages `espeak-ng`, `mbrola`, and `mbrola-us1` for the voice service.
+- Update docstring examples and tests when host names or services change.

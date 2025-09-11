@@ -1,8 +1,17 @@
 [hosts]
-[hosts.alpha]
-services = ["hrs04", "display"]
-[hosts.alpha.hrs04]
+[hosts.brainstem]
+image = "rpi"
+services = ["voice", "logticker", "hrs04", "display"]
+[hosts.brainstem.hrs04]
 trig_pin = 17
 echo_pin = 27
-[hosts.alpha.display]
+[hosts.brainstem.display]
 topics = ["/sensor/range"]
+[hosts.cerebellum]
+image = "rpi"
+services = ["voice", "logticker"]
+[hosts.forebrain]
+services = ["voice", "logticker"]
+[hosts.monitor]
+image = "rpi"
+services = ["voice", "logticker"]
