@@ -14,7 +14,15 @@ import subprocess
 from pathlib import Path
 from typing import Iterable
 
-from .setup_host import load_config
+# Dynamically import load_config from setup_host.py
+import importlib.util
+import sys
+setup_host_path = Path(__file__).parent / "setup_host.py"
+spec = importlib.util.spec_from_file_location("setup_host", setup_host_path)
+setup_host = importlib.util.module_from_spec(spec)
+sys.modules["setup_host"] = setup_host
+spec.loader.exec_module(setup_host)
+load_config = setup_host.load_config
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "hosts.toml"
 BUILD_SCRIPT = Path(__file__).resolve().parent / "build_rpi_image.sh"

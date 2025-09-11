@@ -4,3 +4,4 @@
 cerebellum-*.img
 cerebellum-*.img.gz
 forebrain/tools/work/ubuntu_forebrain.img
+/images/*
