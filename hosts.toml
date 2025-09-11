@@ -1,0 +1,8 @@
+[hosts]
+[hosts.alpha]
+services = ["hrs04", "display"]
+[hosts.alpha.hrs04]
+trig_pin = 17
+echo_pin = 27
+[hosts.alpha.display]
+topics = ["/sensor/range"]
