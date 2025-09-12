@@ -24,6 +24,7 @@ REPO_URL = "https://example.com/psyche.git"
 REPO_DIR = HOME_DIR / "psyche"
 WORKSPACE = HOME_DIR / "ros2_ws"
 SYSTEMD_DIR = pathlib.Path("/etc/systemd/system")
+VENV_DIR = HOME_DIR / ".venv"
 
 
 def load_config(path: pathlib.Path | str = CONFIG_PATH) -> dict:
@@ -344,18 +345,21 @@ def install_ros2(run=subprocess.run) -> None:
 
 
 def install_zeno(run=subprocess.run) -> None:
-    """Install Zeno communication layer via ``pip``.
+    """Install Zeno communication layer in the service virtualenv.
 
-    Args:
-        run: Callable used to execute shell commands.
+    Uses ``uv`` if available, otherwise falls back to the venv's ``pip``.
 
     Examples:
         >>> calls = []
         >>> install_zeno(lambda cmd, check: calls.append(cmd))
-        >>> calls[0][:2]
-        ['pip', 'install']
+        >>> any('zenoh' in c for cmd in calls for c in cmd)
+        True
     """
-    run(["pip", "install", "zenoh"], check=True)
+    uv = HOME_DIR / ".local/bin/uv"
+    if uv.exists():
+        run([str(uv), "pip", "install", "-p", str(VENV_DIR / "bin/python"), "zenoh"], check=True)
+    else:
+        run([str(VENV_DIR / "bin/pip"), "install", "zenoh"], check=True)
 
 
 def install_voice_packages(run=subprocess.run) -> None:
@@ -374,12 +378,39 @@ def install_voice_packages(run=subprocess.run) -> None:
 
 
 def install_asr_packages(run=subprocess.run) -> None:
-    """Install speech recognition dependencies.
+    """Install speech recognition dependencies into the service virtualenv.
+
+    Installs ``whisper``, ``webrtcvad``, and ``sounddevice``. Uses ``uv`` if
+    available, otherwise falls back to the venv's ``pip``.
 
     Examples:
-        >>> install_asr_packages(lambda cmd, check: None)  # doctest: +SKIP
+        >>> calls = []
+        >>> install_asr_packages(lambda cmd, check: calls.append(cmd))
+        >>> any('whisper' in c for cmd in calls for c in cmd)
+        True
     """
-    run(["pip", "install", "whisper", "webrtcvad", "sounddevice"], check=True)
+    pkgs = ["whisper", "webrtcvad", "sounddevice"]
+    uv = HOME_DIR / ".local/bin/uv"
+    if uv.exists():
+        run([str(uv), "pip", "install", "-p", str(VENV_DIR / "bin/python"), *pkgs], check=True)
+    else:
+        run([str(VENV_DIR / "bin/pip"), "install", *pkgs], check=True)
+
+def ensure_python_env(run=subprocess.run) -> None:
+    """Ensure Python tooling and a venv for the service user.
+
+    - Installs ``python3-venv`` and ``curl`` via apt
+    - Creates a virtualenv at :data:`VENV_DIR` with system site packages
+    - Installs ``uv`` for the service user (best-effort)
+
+    Examples:
+        >>> ensure_python_env(lambda cmd, check: None)  # doctest: +SKIP
+    """
+    run(["apt-get", "update"], check=True)
+    run(["apt-get", "install", "-y", "python3-venv", "curl", "libportaudio2"], check=True)
+    run(["sudo", "-u", SERVICE_USER, "python3", "-m", "venv", "--system-site-packages", str(VENV_DIR)], check=True)
+    # Install uv into the service user's ~/.local/bin (best effort)
+    run(["sudo", "-u", SERVICE_USER, "bash", "-lc", "curl -LsSf https://astral.sh/uv/install.sh | sh"], check=False)
 
 
 def launch_voice(run=subprocess.run) -> None:
@@ -388,7 +419,7 @@ def launch_voice(run=subprocess.run) -> None:
     Examples:
         >>> launch_voice(lambda cmd, check: None)  # doctest: +SKIP
     """
-    cmd = ["python3", script_path("voice_service.py")]
+    cmd = [str(VENV_DIR / "bin/python"), script_path("voice_service.py")]
     install_service_unit("voice", cmd, run)
 
 
@@ -398,7 +429,7 @@ def launch_logticker(run=subprocess.run) -> None:
     Examples:
         >>> launch_logticker(lambda cmd, check: None)  # doctest: +SKIP
     """
-    cmd = ["python3", script_path("log_ticker.py")]
+    cmd = [str(VENV_DIR / "bin/python"), script_path("log_ticker.py")]
     install_service_unit("logticker", cmd, run)
 
 
@@ -409,7 +440,7 @@ def launch_asr(cfg: dict | None = None, run=subprocess.run) -> None:
         >>> launch_asr({'model': 'tiny'}, lambda cmd, check: None)  # doctest: +SKIP
     """
     model = (cfg or {}).get("model", "tiny")
-    cmd = ["python3", script_path("asr_service.py"), "--model", model]
+    cmd = [str(VENV_DIR / "bin/python"), script_path("asr_service.py"), "--model", model]
     install_service_unit("asr", cmd, run)
 
 
@@ -427,6 +458,7 @@ def main() -> None:
     clone_repo()
     setup_workspace()
     ensure_ssh_keys()
+    ensure_python_env()
     install_zeno()
     if "voice" in services or "logticker" in services:
         install_voice_packages()

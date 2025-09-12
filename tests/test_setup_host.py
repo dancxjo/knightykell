@@ -112,7 +112,7 @@ def test_install_zeno_installs_zenoh():
         calls.append(cmd)
 
     install_zeno(fake_run)
-    assert ["pip", "install", "zenoh"] in calls
+    assert any("zenoh" in c for cmd in calls for c in cmd)
 
 
 def test_install_voice_packages_installs_espeak():
