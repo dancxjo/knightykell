@@ -345,9 +345,11 @@ def install_ros2(run=subprocess.run) -> None:
 
 
 def install_zeno(run=subprocess.run) -> None:
-    """Install Zeno communication layer in the service virtualenv.
+    """Install zenoh client in the service virtualenv.
 
-    Uses ``uv`` if available, otherwise falls back to the venv's ``pip``.
+    Prefers the ``eclipse-zenoh`` package. If unavailable, falls back to the
+    legacy ``zenoh`` name with pre-releases permitted. Uses ``uv`` when
+    available; otherwise uses the venv's ``pip``.
 
     Examples:
         >>> calls = []
@@ -356,10 +358,18 @@ def install_zeno(run=subprocess.run) -> None:
         True
     """
     uv = HOME_DIR / ".local/bin/uv"
+    py = str(VENV_DIR / "bin/python")
+    pip = str(VENV_DIR / "bin/pip")
     if uv.exists():
-        run([str(uv), "pip", "install", "-p", str(VENV_DIR / "bin/python"), "zenoh"], check=True)
+        try:
+            run([str(uv), "pip", "install", "-p", py, "eclipse-zenoh"], check=True)
+        except Exception:
+            run([str(uv), "pip", "install", "--prerelease=allow", "-p", py, "zenoh"], check=True)
     else:
-        run([str(VENV_DIR / "bin/pip"), "install", "zenoh"], check=True)
+        try:
+            run([pip, "install", "eclipse-zenoh"], check=True)
+        except Exception:
+            run([pip, "install", "--pre", "zenoh"], check=True)
 
 
 def install_voice_packages(run=subprocess.run) -> None:
