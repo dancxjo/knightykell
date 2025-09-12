@@ -254,6 +254,15 @@ def install_voice_packages(run=subprocess.run) -> None:
     run(["apt-get", "install", "-y", "espeak-ng", "mbrola", "mbrola-us1"], check=True)
 
 
+def install_asr_packages(run=subprocess.run) -> None:
+    """Install speech recognition dependencies.
+
+    Examples:
+        >>> install_asr_packages(lambda cmd, check: None)  # doctest: +SKIP
+    """
+    run(["pip", "install", "whisper", "webrtcvad", "sounddevice"], check=True)
+
+
 def launch_voice(run=subprocess.run) -> None:
     """Install systemd unit for queued text-to-speech.
 
@@ -274,6 +283,22 @@ def launch_logticker(run=subprocess.run) -> None:
     install_service_unit("logticker", cmd, run)
 
 
+def launch_asr(cfg: dict | None = None, run=subprocess.run) -> None:
+    """Install systemd unit for Whisper-based transcription.
+
+    Examples:
+        >>> launch_asr({'model': 'tiny'}, lambda cmd, check: None)  # doctest: +SKIP
+    """
+    model = (cfg or {}).get("model", "tiny")
+    cmd = [
+        "python3",
+        str(REPO_DIR / "scripts" / "asr_service.py"),
+        "--model",
+        model,
+    ]
+    install_service_unit("asr", cmd, run)
+
+
 def main() -> None:
     """Entry point for host setup."""
     cfg = load_config()
@@ -290,6 +315,8 @@ def main() -> None:
     install_zeno()
     if "voice" in services or "logticker" in services:
         install_voice_packages()
+    if "asr" in services:
+        install_asr_packages()
     for svc in services:
         scfg = get_service_config(host, svc, cfg)
         if svc == "hrs04":
@@ -300,6 +327,8 @@ def main() -> None:
             launch_voice()
         elif svc == "logticker":
             launch_logticker()
+        elif svc == "asr":
+            launch_asr(scfg)
         else:
             print(f"Unknown service {svc}")
     print(f"Installed services: {', '.join(services)}")

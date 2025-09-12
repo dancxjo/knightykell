@@ -1,12 +1,14 @@
 [hosts]
 [hosts.brainstem]
 image = "rpi"
-services = ["voice", "logticker", "hrs04", "display"]
+services = ["voice", "logticker", "hrs04", "display", "asr"]
 [hosts.brainstem.hrs04]
 trig_pin = 17
 echo_pin = 27
 [hosts.brainstem.display]
 topics = ["/sensor/range"]
+[hosts.brainstem.asr]
+model = "tiny"
 [hosts.cerebellum]
 image = "rpi"
 services = ["voice", "logticker"]

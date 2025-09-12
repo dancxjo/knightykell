@@ -21,6 +21,8 @@ from scripts.setup_host import (
     launch_voice,
     load_config,
     setup_workspace,
+    launch_asr,
+    install_asr_packages,
 )
 
 
@@ -217,6 +219,21 @@ def test_launch_logticker_creates_systemd_unit(monkeypatch, tmp_path):
     assert ["systemctl", "enable", "--now", "banks-logticker.service"] in calls
 
 
+def test_launch_asr_creates_systemd_unit(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr("scripts.setup_host.SYSTEMD_DIR", tmp_path)
+
+    def fake_run(cmd, check):
+        calls.append(cmd)
+
+    launch_asr({'model': 'base'}, fake_run)
+    unit = tmp_path / "banks-asr.service"
+    assert unit.exists()
+    content = unit.read_text()
+    assert '--model base' in content
+    assert ['systemctl', 'enable', '--now', 'banks-asr.service'] in calls
+
+
 def test_main_launches_configured_services(monkeypatch):
     config = {
         "hosts": {
@@ -295,3 +312,23 @@ def test_main_launches_voice_and_logticker(monkeypatch):
 
     main()
     assert all(called.values())
+
+def test_main_launches_asr(monkeypatch):
+    config = {
+        'hosts': {'brainstem': {'services': ['asr'], 'asr': {'model': 'small'}}}
+    }
+    monkeypatch.setattr('scripts.setup_host.load_config', lambda: config)
+    monkeypatch.setattr('scripts.setup_host.socket.gethostname', lambda: 'brainstem')
+    monkeypatch.setattr('scripts.setup_host.ensure_service_user', lambda: None)
+    monkeypatch.setattr('scripts.setup_host.clone_repo', lambda: None)
+    monkeypatch.setattr('scripts.setup_host.setup_workspace', lambda: None)
+    monkeypatch.setattr('scripts.setup_host.ensure_ssh_keys', lambda: None)
+    monkeypatch.setattr('scripts.setup_host.install_ros2', lambda: None)
+    monkeypatch.setattr('scripts.setup_host.install_zeno', lambda: None)
+    called = {}
+    monkeypatch.setattr('scripts.setup_host.install_asr_packages', lambda: called.setdefault('pkg', True))
+    monkeypatch.setattr('scripts.setup_host.launch_asr', lambda cfg: called.setdefault('cfg', cfg))
+    from scripts.setup_host import main
+    main()
+    assert called['pkg'] and called['cfg']['model'] == 'small'
+
