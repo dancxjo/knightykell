@@ -172,7 +172,7 @@ def test_launch_hrs04_creates_systemd_unit(monkeypatch, tmp_path):
     launch_hrs04({"trig_pin": 1, "echo_pin": 2}, fake_run)
     unit = tmp_path / "psyche-hrs04.service"
     assert unit.exists()
-    assert "hrs04_sensor" in unit.read_text()
+    assert "hrs04_node.py" in unit.read_text()
     assert ["systemctl", "enable", "--now", "psyche-hrs04.service"] in calls
 
 
@@ -187,7 +187,7 @@ def test_launch_display_creates_systemd_unit(monkeypatch, tmp_path):
     unit = tmp_path / "psyche-display.service"
     assert unit.exists()
     content = unit.read_text()
-    assert "/foo" in content and "/bar" in content
+    assert "ssd1306_display_node.py" in content and "/foo" in content and "/bar" in content
     assert ["systemctl", "enable", "--now", "psyche-display.service"] in calls
 
 

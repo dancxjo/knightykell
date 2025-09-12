@@ -311,12 +311,11 @@ def launch_hrs04(cfg: dict, run=subprocess.run) -> None:
     Examples:
         >>> launch_hrs04({'trig_pin': 1, 'echo_pin': 2})  # doctest: +SKIP
     """
-    if not ros2_pkg_exists("sensors", run):
-        print("hrs04: skipping service install; ROS package 'sensors' not found")
-        return
     cmd = [
-        "ros2", "run", "sensors", "hrs04_sensor",
-        f"--trig={cfg.get('trig_pin')}", f"--echo={cfg.get('echo_pin')}",
+        str(VENV_DIR / "bin/python"),
+        script_path("hrs04_node.py"),
+        f"--trig={cfg.get('trig_pin')}",
+        f"--echo={cfg.get('echo_pin')}",
     ]
     install_service_unit("hrs04", cmd, run)
 
@@ -330,11 +329,8 @@ def launch_display(cfg: dict, run=subprocess.run) -> None:
     Examples:
         >>> launch_display({'topics': ['/foo']})  # doctest: +SKIP
     """
-    if not ros2_pkg_exists("display", run):
-        print("display: skipping service install; ROS package 'display' not found")
-        return
     topics = cfg.get("topics", [])
-    cmd = ["ros2", "run", "display", "ssd1306_display", *topics]
+    cmd = [str(VENV_DIR / "bin/python"), script_path("ssd1306_display_node.py"), *topics]
     install_service_unit("display", cmd, run)
 
 
@@ -447,6 +443,21 @@ def install_voice_packages(run=subprocess.run) -> None:
     run(["apt-get", "install", "-y", "espeak-ng", "mbrola", "mbrola-us1"], check=True)
 
 
+def install_pi_hw_packages(run=subprocess.run) -> None:
+    """Install Raspberry Pi GPIO and OLED dependencies.
+
+    - Apt: python3-rpi.gpio, python3-gpiozero, i2c-tools
+    - Venv: luma.oled, Pillow
+    """
+    run(["apt-get", "install", "-y", "python3-rpi.gpio", "python3-gpiozero", "i2c-tools"], check=True)
+    uv = HOME_DIR / ".local/bin/uv"
+    pkgs = ["luma.oled", "Pillow"]
+    if uv.exists():
+        run([str(uv), "pip", "install", "-p", str(VENV_DIR / "bin/python"), *pkgs], check=True)
+    else:
+        run([str(VENV_DIR / "bin/pip"), "install", *pkgs], check=True)
+
+
 def install_asr_packages(run=subprocess.run) -> None:
     """Install speech recognition dependencies into the service virtualenv.
 
@@ -536,21 +547,29 @@ def main() -> None:
         install_voice_packages()
     if "asr" in services:
         install_asr_packages()
+    if any(s in services for s in ("hrs04", "display")):
+        install_pi_hw_packages()
+    installed: list[str] = []
     for svc in services:
         scfg = get_service_config(host, svc, cfg)
         if svc == "hrs04":
             launch_hrs04(scfg)
+            installed.append("hrs04")
         elif svc == "display":
             launch_display(scfg)
+            installed.append("display")
         elif svc == "voice":
             launch_voice()
+            installed.append("voice")
         elif svc == "logticker":
             launch_logticker()
+            installed.append("logticker")
         elif svc == "asr":
             launch_asr(scfg)
+            installed.append("asr")
         else:
             print(f"Unknown service {svc}")
-    print(f"Installed services: {', '.join(services)}")
+    print(f"Installed services: {', '.join(installed)}")
 
 
 if __name__ == "__main__":
