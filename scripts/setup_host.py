@@ -181,6 +181,9 @@ def setup_workspace(run=subprocess.run) -> None:
     If a local repo exists at :data:`REPO_DIR`, mirror it into ``src/psyche``
     to avoid network fetches; otherwise falls back to ``git clone``.
     """
+    # Ensure workspace exists and is writable by the service user
+    WORKSPACE.mkdir(parents=True, exist_ok=True)
+    run(["chown", "-R", f"{SERVICE_USER}:{SERVICE_USER}", str(WORKSPACE)], check=True)
     src = WORKSPACE / "src"
     src.mkdir(parents=True, exist_ok=True)
     target = src / "psyche"

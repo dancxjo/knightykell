@@ -5,4 +5,4 @@ package_update: true
 packages:
   - curl
 runcmd:
-  - [ bash, -lc, "curl -fsSL https://dancxjo.github.io/knightykell/install.sh | sudo bash" ]
+  - bash -lc "curl -fsSL https://raw.githubusercontent.com/dancxjo/knightykell/refs/heads/main/scripts/install.sh | sudo bash -s -- -o dancxjo -r knightykell -b main"
