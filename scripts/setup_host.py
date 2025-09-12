@@ -278,14 +278,16 @@ def install_ros2(run=subprocess.run) -> None:
     """Install ROS 2 Jazzy on Ubuntu 24.04.
 
     Ensures the ROS 2 apt repository is configured and installs
-    ``ros-jazzy-ros-base`` and ``python3-colcon-common-extensions``.
+    ``ros-jazzy-ros-base`` and ``python3-colcon-common-extensions``. If
+    enabling ``universe`` or installing colcon via apt fails, continues and
+    attempts a pip-based fallback for colcon.
 
     Examples:
         >>> calls = []
         >>> install_ros2(lambda cmd, check: calls.append(cmd))
         >>> ["apt-get", "update"] in calls
         True
-        >>> any("ros-jazzy-ros-base" in " ".join(c) for c in calls)
+        >>> ["apt-get", "install", "-y", "ros-jazzy-ros-base"] in calls
         True
     """
     run(["apt-get", "update"], check=True)
@@ -298,11 +300,15 @@ def install_ros2(run=subprocess.run) -> None:
             "gnupg",
             "lsb-release",
             "software-properties-common",
+            "ca-certificates",
         ],
         check=True,
     )
-    # Add universe (idempotent)
-    run(["add-apt-repository", "-y", "universe"], check=True)
+    # Try to enable universe; ignore failures on non-Ubuntu/minimal systems
+    try:
+        run(["add-apt-repository", "-y", "universe"], check=True)
+    except Exception:
+        pass
     keyring = pathlib.Path("/usr/share/keyrings/ros.gpg")
     sources = pathlib.Path("/etc/apt/sources.list.d/ros2.list")
     if not keyring.exists():
@@ -324,10 +330,14 @@ def install_ros2(run=subprocess.run) -> None:
             check=True,
         )
     run(["apt-get", "update"], check=True)
-    run(
-        ["apt-get", "install", "-y", "ros-jazzy-ros-base", "python3-colcon-common-extensions"],
-        check=True,
-    )
+    # Install ROS base
+    run(["apt-get", "install", "-y", "ros-jazzy-ros-base"], check=True)
+    # Install colcon from apt; if that fails at runtime, pip fallback happens later in build
+    try:
+        run(["apt-get", "install", "-y", "python3-colcon-common-extensions"], check=True)
+    except Exception:
+        # fallback to pip install; ignore if pip not present here
+        run(["pip", "install", "colcon-common-extensions"], check=False)
 
 
 def install_zeno(run=subprocess.run) -> None:

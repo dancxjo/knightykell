@@ -1,0 +1,8 @@
+#cloud-config
+hostname: <hostname>
+manage_etc_hosts: true
+package_update: true
+packages:
+  - curl
+runcmd:
+  - [ bash, -lc, "curl -fsSL https://dancxjo.github.io/knightykell/install.sh | sudo bash" ]

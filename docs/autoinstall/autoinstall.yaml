@@ -1,0 +1,20 @@
+#cloud-config
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  identity:
+    hostname: forebrain
+    username: ubuntu
+    password: "$6$rounds=4096$changeme$7T0m1bVjT6m6i7ZzF1tOQzE4GkqQ1mZkO6wqv0wT0f6o0Gv6O4gU/"  # replace; mkpasswd -m sha-512
+  ssh:
+    install-server: true
+    allow-pw: true
+  storage:
+    layout:
+      name: lvm
+  packages:
+    - curl
+  late-commands:
+    - curtin in-target --target=/target -- /usr/bin/env bash -lc "curl -fsSL https://dancxjo.github.io/knightykell/install.sh | sudo bash"

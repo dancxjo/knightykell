@@ -7,9 +7,11 @@ echo "[firstboot] $(date -Is) starting"
 # Enable I2C if not already enabled
 NEED_REBOOT=0
 if grep -qi 'raspberry pi' /proc/device-tree/model 2>/dev/null; then
-    if ! grep -q '^dtparam=i2c_arm=on' /boot/config.txt; then
-        echo 'dtparam=i2c_arm=on' | sudo tee -a /boot/config.txt
-        echo "[firstboot] I2C enabled in /boot/config.txt; reboot required for effect"
+    CFG="/boot/config.txt"
+    if [ -f /boot/firmware/config.txt ]; then CFG="/boot/firmware/config.txt"; fi
+    if ! grep -q '^dtparam=i2c_arm=on' "$CFG"; then
+        echo 'dtparam=i2c_arm=on' | sudo tee -a "$CFG"
+        echo "[firstboot] I2C enabled in $CFG; reboot required for effect"
         NEED_REBOOT=1
     fi
     sudo modprobe i2c-dev || true

@@ -1,4 +1,4 @@
-.PHONY: image test provision
+.PHONY: image ubuntu-images test provision
 
 # Build Raspberry Pi images for hosts defined in hosts.toml.
 # Usage: make image HOSTS="brainstem forebrain" (default builds all)
@@ -6,6 +6,9 @@ HOSTS ?=
 
 image:
 	@python scripts/build_images.py $(HOSTS)
+
+ubuntu-images:
+	@python scripts/build_ubuntu_images.py $(HOSTS)
 
 test:
 	@pytest
