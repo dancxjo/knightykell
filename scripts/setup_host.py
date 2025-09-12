@@ -123,6 +123,20 @@ def script_path(name: str) -> str:
     return str(fallback)
 
 
+def ros2_pkg_exists(name: str, run=subprocess.run) -> bool:
+    """Return True if a ROS 2 package ``name`` is discoverable.
+
+    Examples:
+        >>> isinstance(ros2_pkg_exists('rclpy'), bool)
+        True
+    """
+    proc = run([
+        "bash", "-lc",
+        "source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && ros2 pkg prefix " + name + " >/dev/null 2>&1"
+    ], check=False)
+    return getattr(proc, "returncode", 1) == 0
+
+
 def ensure_ssh_keys() -> None:
     """Generate shared SSH keys if absent."""
     SSH_DIR.mkdir(parents=True, exist_ok=True)
@@ -235,6 +249,14 @@ After=network.target
 Type=simple
 User={SERVICE_USER}
 Environment=ROS_DISTRO=jazzy
+EnvironmentFile=-/etc/psyche.env
+Restart=on-failure
+RestartSec=2
+StartLimitIntervalSec=60
+StartLimitBurst=3
+WorkingDirectory={HOME_DIR}
+StandardOutput=journal
+StandardError=journal
 ExecStart={wrapped}
 
 [Install]
@@ -267,6 +289,19 @@ fi
         pass
 
 
+def ensure_service_env() -> None:
+    """Write a systemd environment file for PSYCHE services.
+
+    Creates ``/etc/psyche.env`` with a minimal environment ensuring the venv
+    and ROS tools are on PATH for all units.
+    """
+    lines = [
+        f"PATH={VENV_DIR}/bin:/opt/ros/jazzy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin",
+        "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp",
+    ]
+    pathlib.Path("/etc/psyche.env").write_text("\n".join(lines) + "\n")
+
+
 def launch_hrs04(cfg: dict, run=subprocess.run) -> None:
     """Install systemd unit for an HRS04 ultrasonic sensor node.
 
@@ -276,13 +311,12 @@ def launch_hrs04(cfg: dict, run=subprocess.run) -> None:
     Examples:
         >>> launch_hrs04({'trig_pin': 1, 'echo_pin': 2})  # doctest: +SKIP
     """
+    if not ros2_pkg_exists("sensors", run):
+        print("hrs04: skipping service install; ROS package 'sensors' not found")
+        return
     cmd = [
-        "ros2",
-        "run",
-        "sensors",
-        "hrs04_sensor",
-        f"--trig={cfg.get('trig_pin')}",
-        f"--echo={cfg.get('echo_pin')}",
+        "ros2", "run", "sensors", "hrs04_sensor",
+        f"--trig={cfg.get('trig_pin')}", f"--echo={cfg.get('echo_pin')}",
     ]
     install_service_unit("hrs04", cmd, run)
 
@@ -296,6 +330,9 @@ def launch_display(cfg: dict, run=subprocess.run) -> None:
     Examples:
         >>> launch_display({'topics': ['/foo']})  # doctest: +SKIP
     """
+    if not ros2_pkg_exists("display", run):
+        print("display: skipping service install; ROS package 'display' not found")
+        return
     topics = cfg.get("topics", [])
     cmd = ["ros2", "run", "display", "ssd1306_display", *topics]
     install_service_unit("display", cmd, run)
@@ -494,6 +531,7 @@ def main() -> None:
     ensure_python_env()
     install_zeno()
     ensure_shell_env()
+    ensure_service_env()
     if "voice" in services or "logticker" in services:
         install_voice_packages()
     if "asr" in services:
