@@ -25,12 +25,17 @@ ROOT=$(mktemp -d)
 sudo mount "${LOOP}p1" "$BOOT"
 sudo mount "${LOOP}p2" "$ROOT"
 
-sudo mkdir -p "$ROOT/opt/banks"
-sudo cp "$REPO_ROOT/scripts/setup_host.py" "$ROOT/opt/banks/setup_host.py"
-sudo cp "$REPO_ROOT/firstboot/firstboot.sh" "$ROOT/opt/banks/firstboot.sh"
-sudo chmod +x "$ROOT/opt/banks/firstboot.sh"
-sudo cp "$REPO_ROOT/firstboot/banks-firstboot.service" "$ROOT/etc/systemd/system/banks-firstboot.service"
-sudo chroot "$ROOT" systemctl enable banks-firstboot.service >/dev/null 2>&1 || true
+sudo mkdir -p "$ROOT/opt/psyche/scripts"
+sudo cp "$REPO_ROOT/scripts/setup_host.py" "$ROOT/opt/psyche/setup_host.py"
+sudo cp "$REPO_ROOT/firstboot/firstboot.sh" "$ROOT/opt/psyche/firstboot.sh"
+sudo chmod +x "$ROOT/opt/psyche/firstboot.sh"
+sudo cp "$REPO_ROOT/firstboot/psyche-firstboot.service" "$ROOT/etc/systemd/system/psyche-firstboot.service"
+# Copy configuration and helper scripts used at first boot
+sudo cp "$REPO_ROOT/hosts.toml" "$ROOT/opt/psyche/hosts.toml"
+sudo cp "$REPO_ROOT/firstboot/oled_log.py" "$ROOT/opt/psyche/oled_log.py"
+# Deploy service scripts so units can run without a network clone
+sudo cp -r "$REPO_ROOT/scripts/"*.py "$ROOT/opt/psyche/scripts/"
+sudo chroot "$ROOT" systemctl enable psyche-firstboot.service >/dev/null 2>&1 || true
 
 sudo umount "$BOOT" "$ROOT"
 sudo losetup -d "$LOOP"

@@ -170,10 +170,10 @@ def test_launch_hrs04_creates_systemd_unit(monkeypatch, tmp_path):
         calls.append(cmd)
 
     launch_hrs04({"trig_pin": 1, "echo_pin": 2}, fake_run)
-    unit = tmp_path / "banks-hrs04.service"
+    unit = tmp_path / "psyche-hrs04.service"
     assert unit.exists()
     assert "hrs04_sensor" in unit.read_text()
-    assert ["systemctl", "enable", "--now", "banks-hrs04.service"] in calls
+    assert ["systemctl", "enable", "--now", "psyche-hrs04.service"] in calls
 
 
 def test_launch_display_creates_systemd_unit(monkeypatch, tmp_path):
@@ -184,11 +184,11 @@ def test_launch_display_creates_systemd_unit(monkeypatch, tmp_path):
         calls.append(cmd)
 
     launch_display({"topics": ["/foo", "/bar"]}, fake_run)
-    unit = tmp_path / "banks-display.service"
+    unit = tmp_path / "psyche-display.service"
     assert unit.exists()
     content = unit.read_text()
     assert "/foo" in content and "/bar" in content
-    assert ["systemctl", "enable", "--now", "banks-display.service"] in calls
+    assert ["systemctl", "enable", "--now", "psyche-display.service"] in calls
 
 
 def test_launch_voice_creates_systemd_unit(monkeypatch, tmp_path):
@@ -199,10 +199,10 @@ def test_launch_voice_creates_systemd_unit(monkeypatch, tmp_path):
         calls.append(cmd)
 
     launch_voice(fake_run)
-    unit = tmp_path / "banks-voice.service"
+    unit = tmp_path / "psyche-voice.service"
     assert unit.exists()
     assert "voice_service.py" in unit.read_text()
-    assert ["systemctl", "enable", "--now", "banks-voice.service"] in calls
+    assert ["systemctl", "enable", "--now", "psyche-voice.service"] in calls
 
 
 def test_launch_logticker_creates_systemd_unit(monkeypatch, tmp_path):
@@ -213,10 +213,10 @@ def test_launch_logticker_creates_systemd_unit(monkeypatch, tmp_path):
         calls.append(cmd)
 
     launch_logticker(fake_run)
-    unit = tmp_path / "banks-logticker.service"
+    unit = tmp_path / "psyche-logticker.service"
     assert unit.exists()
     assert "log_ticker.py" in unit.read_text()
-    assert ["systemctl", "enable", "--now", "banks-logticker.service"] in calls
+    assert ["systemctl", "enable", "--now", "psyche-logticker.service"] in calls
 
 
 def test_launch_asr_creates_systemd_unit(monkeypatch, tmp_path):
@@ -227,11 +227,11 @@ def test_launch_asr_creates_systemd_unit(monkeypatch, tmp_path):
         calls.append(cmd)
 
     launch_asr({'model': 'base'}, fake_run)
-    unit = tmp_path / "banks-asr.service"
+    unit = tmp_path / "psyche-asr.service"
     assert unit.exists()
     content = unit.read_text()
     assert '--model base' in content
-    assert ['systemctl', 'enable', '--now', 'banks-asr.service'] in calls
+    assert ['systemctl', 'enable', '--now', 'psyche-asr.service'] in calls
 
 
 def test_main_launches_configured_services(monkeypatch):
@@ -331,4 +331,3 @@ def test_main_launches_asr(monkeypatch):
     from scripts.setup_host import main
     main()
     assert called['pkg'] and called['cfg']['model'] == 'small'
-

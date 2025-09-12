@@ -1,11 +1,11 @@
 [Unit]
-Description=BANKS first boot provisioning
+Description=PSYCHE first boot provisioning
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/opt/banks/firstboot.sh
+ExecStart=/opt/psyche/firstboot.sh
 RemainAfterExit=yes
 
 [Install]

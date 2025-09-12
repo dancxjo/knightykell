@@ -3,7 +3,7 @@
 Display log lines on SSD1306 OLED during first boot.
 
 Usage:
-    tail -f /var/log/syslog | python3 /home/pete/firstboot/oled_log.py
+    tail -f /var/log/syslog | python3 /opt/psyche/oled_log.py
 """
 import sys
 from luma.core.interface.serial import i2c

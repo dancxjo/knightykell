@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Host-specific setup utilities for BANKS ROS2 deployments.
+"""Host-specific setup utilities for PSYCHE ROS2 deployments.
 
 Examples:
     >>> cfg = {"hosts": {"brainstem": {"services": ["core"]}}}
@@ -9,17 +9,19 @@ Examples:
 
 from __future__ import annotations
 
+import os
 import pathlib
 import socket
 import subprocess
+import shutil
 import tomllib
 
 CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent / "hosts.toml"
-SSH_DIR = pathlib.Path("/etc/banks-ssh")
+SSH_DIR = pathlib.Path("/etc/psyche-ssh")
 SERVICE_USER = "pete"
 HOME_DIR = pathlib.Path(f"/home/{SERVICE_USER}")
-REPO_URL = "https://example.com/banks.git"
-REPO_DIR = HOME_DIR / "banks"
+REPO_URL = "https://example.com/psyche.git"
+REPO_DIR = HOME_DIR / "psyche"
 WORKSPACE = HOME_DIR / "ros2_ws"
 SYSTEMD_DIR = pathlib.Path("/etc/systemd/system")
 
@@ -28,7 +30,7 @@ def load_config(path: pathlib.Path | str = CONFIG_PATH) -> dict:
     """Load TOML configuration.
 
     Args:
-        path: Path to a TOML file.
+        path: Path to a TOML file. If not provided, searches common locations.
 
     Returns:
         Parsed configuration dictionary.
@@ -40,8 +42,24 @@ def load_config(path: pathlib.Path | str = CONFIG_PATH) -> dict:
         >>> cfg['hosts']['brainstem']['services']
         ['core']
     """
-    with open(path, "rb") as fh:
-        return tomllib.load(fh)
+    # Resolve candidate locations if a default path is used
+    candidates: list[pathlib.Path]
+    if isinstance(path, (str, pathlib.Path)) and pathlib.Path(path) == CONFIG_PATH:
+        candidates = [
+            CONFIG_PATH,
+            pathlib.Path("/opt/psyche/hosts.toml"),
+            pathlib.Path("/opt/hosts.toml"),
+        ]
+    else:
+        candidates = [pathlib.Path(path)]
+
+    for cand in candidates:
+        try:
+            with open(cand, "rb") as fh:
+                return tomllib.load(fh)
+        except FileNotFoundError:
+            continue
+    raise FileNotFoundError(f"No hosts.toml found at: {', '.join(str(c) for c in candidates)}")
 
 
 def get_services(hostname: str, config: dict) -> list[str]:
@@ -87,6 +105,23 @@ def get_service_config(hostname: str, service: str, config: dict) -> dict:
     return config.get("hosts", {}).get(hostname, {}).get(service, {})
 
 
+def script_path(name: str) -> str:
+    """Return absolute path to a bundled service script.
+
+    Prefers the cloned repo under the service user's home; falls back to
+    ``/opt/psyche/scripts`` which is populated in the base image.
+
+    Examples:
+        >>> isinstance(script_path('voice_service.py'), str)
+        True
+    """
+    repo_script = REPO_DIR / "scripts" / name
+    if repo_script.exists():
+        return str(repo_script)
+    fallback = pathlib.Path("/opt/psyche/scripts") / name
+    return str(fallback)
+
+
 def ensure_ssh_keys() -> None:
     """Generate shared SSH keys if absent."""
     SSH_DIR.mkdir(parents=True, exist_ok=True)
@@ -117,23 +152,47 @@ def ensure_service_user(run=subprocess.run) -> None:
 
 
 def clone_repo(run=subprocess.run) -> None:
-    """Clone the BANKS repository for the service user."""
-    if not REPO_DIR.exists():
-        run(
-            ["sudo", "-u", SERVICE_USER, "git", "clone", REPO_URL, str(REPO_DIR)],
-            check=True,
-        )
+    """Populate ``/home/pete/psyche`` for the service user.
+
+    Behavior:
+    - If the environment variable ``PSYCHE_SRC`` points to a local checkout,
+      copy it into place (preferred for offline provisioning).
+    - Otherwise, attempt to ``git clone`` from :data:`REPO_URL`.
+
+    Examples:
+        >>> clone_repo(lambda cmd, check: None)  # doctest: +SKIP
+    """
+    if REPO_DIR.exists():
+        return
+    src = os.environ.get("PSYCHE_SRC")
+    if src and pathlib.Path(src).exists():
+        shutil.copytree(src, REPO_DIR)
+        run(["chown", "-R", f"{SERVICE_USER}:{SERVICE_USER}", str(REPO_DIR)], check=True)
+        return
+    run(
+        ["sudo", "-u", SERVICE_USER, "git", "clone", REPO_URL, str(REPO_DIR)],
+        check=True,
+    )
 
 
 def setup_workspace(run=subprocess.run) -> None:
-    """Create and build the ROS2 workspace."""
+    """Create and build the ROS2 workspace.
+
+    If a local repo exists at :data:`REPO_DIR`, mirror it into ``src/psyche``
+    to avoid network fetches; otherwise falls back to ``git clone``.
+    """
     src = WORKSPACE / "src"
     src.mkdir(parents=True, exist_ok=True)
-    if not (src / "banks").exists():
-        run(
-            ["sudo", "-u", SERVICE_USER, "git", "clone", REPO_URL, str(src / "banks")],
-            check=True,
-        )
+    target = src / "psyche"
+    if not target.exists():
+        if REPO_DIR.exists():
+            shutil.copytree(REPO_DIR, target)
+            run(["chown", "-R", f"{SERVICE_USER}:{SERVICE_USER}", str(target)], check=True)
+        else:
+            run(
+                ["sudo", "-u", SERVICE_USER, "git", "clone", REPO_URL, str(target)],
+                check=True,
+            )
     run(
         [
             "sudo",
@@ -141,7 +200,7 @@ def setup_workspace(run=subprocess.run) -> None:
             SERVICE_USER,
             "bash",
             "-lc",
-            f"cd {WORKSPACE} && colcon build",
+            f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
         ],
         check=True,
     )
@@ -157,21 +216,28 @@ def install_service_unit(name: str, cmd: list[str], run=subprocess.run) -> None:
     Examples:
         >>> install_service_unit('demo', ['echo', 'hi'])  # doctest: +SKIP
     """
-    unit_path = SYSTEMD_DIR / f"banks-{name}.service"
+    unit_path = SYSTEMD_DIR / f"psyche-{name}.service"
+    wrapped = (
+        f"/bin/bash -lc '"
+        f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1; "
+        f"[ -f {HOME_DIR}/ros2_ws/install/setup.bash ] && source {HOME_DIR}/ros2_ws/install/setup.bash >/dev/null 2>&1 || true; "
+        f"{' '.join(cmd)}'"
+    )
     unit_content = f"""[Unit]
-Description=BANKS {name} service
+Description=PSYCHE {name} service
 After=network.target
 
 [Service]
 Type=simple
 User={SERVICE_USER}
-ExecStart={' '.join(cmd)}
+Environment=ROS_DISTRO=jazzy
+ExecStart={wrapped}
 
 [Install]
 WantedBy=multi-user.target
 """
     unit_path.write_text(unit_content)
-    run(["systemctl", "enable", "--now", f"banks-{name}.service"], check=True)
+    run(["systemctl", "enable", "--now", f"psyche-{name}.service"], check=True)
 
 
 def launch_hrs04(cfg: dict, run=subprocess.run) -> None:
@@ -209,19 +275,59 @@ def launch_display(cfg: dict, run=subprocess.run) -> None:
 
 
 def install_ros2(run=subprocess.run) -> None:
-    """Install ROS2 Jazzy base packages.
+    """Install ROS 2 Jazzy on Ubuntu 24.04.
 
-    Args:
-        run: Callable used to execute shell commands.
+    Ensures the ROS 2 apt repository is configured and installs
+    ``ros-jazzy-ros-base`` and ``python3-colcon-common-extensions``.
 
     Examples:
         >>> calls = []
         >>> install_ros2(lambda cmd, check: calls.append(cmd))
-        >>> calls[0][:2]
-        ['apt-get', 'update']
+        >>> ["apt-get", "update"] in calls
+        True
+        >>> any("ros-jazzy-ros-base" in " ".join(c) for c in calls)
+        True
     """
     run(["apt-get", "update"], check=True)
-    run(["apt-get", "install", "-y", "ros-jazzy-ros-base"], check=True)
+    run(
+        [
+            "apt-get",
+            "install",
+            "-y",
+            "curl",
+            "gnupg",
+            "lsb-release",
+            "software-properties-common",
+        ],
+        check=True,
+    )
+    # Add universe (idempotent)
+    run(["add-apt-repository", "-y", "universe"], check=True)
+    keyring = pathlib.Path("/usr/share/keyrings/ros.gpg")
+    sources = pathlib.Path("/etc/apt/sources.list.d/ros2.list")
+    if not keyring.exists():
+        run(
+            [
+                "bash",
+                "-lc",
+                "curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key | gpg --dearmor | tee /usr/share/keyrings/ros.gpg >/dev/null",
+            ],
+            check=True,
+        )
+    if not sources.exists():
+        run(
+            [
+                "bash",
+                "-lc",
+                'echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list >/dev/null',
+            ],
+            check=True,
+        )
+    run(["apt-get", "update"], check=True)
+    run(
+        ["apt-get", "install", "-y", "ros-jazzy-ros-base", "python3-colcon-common-extensions"],
+        check=True,
+    )
 
 
 def install_zeno(run=subprocess.run) -> None:
@@ -269,7 +375,7 @@ def launch_voice(run=subprocess.run) -> None:
     Examples:
         >>> launch_voice(lambda cmd, check: None)  # doctest: +SKIP
     """
-    cmd = ["python3", str(REPO_DIR / "scripts" / "voice_service.py")]
+    cmd = ["python3", script_path("voice_service.py")]
     install_service_unit("voice", cmd, run)
 
 
@@ -279,7 +385,7 @@ def launch_logticker(run=subprocess.run) -> None:
     Examples:
         >>> launch_logticker(lambda cmd, check: None)  # doctest: +SKIP
     """
-    cmd = ["python3", str(REPO_DIR / "scripts" / "log_ticker.py")]
+    cmd = ["python3", script_path("log_ticker.py")]
     install_service_unit("logticker", cmd, run)
 
 
@@ -290,12 +396,7 @@ def launch_asr(cfg: dict | None = None, run=subprocess.run) -> None:
         >>> launch_asr({'model': 'tiny'}, lambda cmd, check: None)  # doctest: +SKIP
     """
     model = (cfg or {}).get("model", "tiny")
-    cmd = [
-        "python3",
-        str(REPO_DIR / "scripts" / "asr_service.py"),
-        "--model",
-        model,
-    ]
+    cmd = ["python3", script_path("asr_service.py"), "--model", model]
     install_service_unit("asr", cmd, run)
 
 
