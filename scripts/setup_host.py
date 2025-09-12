@@ -409,10 +409,11 @@ def main() -> None:
         print(f"No services configured for {host}")
         return
     ensure_service_user()
+    # Install ROS first so colcon and env are available for builds
+    install_ros2()
     clone_repo()
     setup_workspace()
     ensure_ssh_keys()
-    install_ros2()
     install_zeno()
     if "voice" in services or "logticker" in services:
         install_voice_packages()

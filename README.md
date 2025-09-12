@@ -17,8 +17,8 @@ curl -fsSL https://dancxjo.github.io/knightykell/install.sh | sudo bash
 - Alternate (raw GitHub, pass owner/repo/branch):
 
 ```
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/<ref>/scripts/install.sh \
-  | sudo bash -s -- -o <owner> -r <repo> -b <ref>
+curl -fsSL https://raw.githubusercontent.com/dancxjo/knightykell/refs/heads/main/scripts/install.sh \
+  | sudo bash -s -- -o dancxjo -r knightykell -b main
 ```
 
 What it does:
