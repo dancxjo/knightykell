@@ -244,6 +244,29 @@ WantedBy=multi-user.target
     run(["systemctl", "enable", "--now", f"psyche-{name}.service"], check=True)
 
 
+def ensure_shell_env() -> None:
+    """Ensure interactive shells source ROS and workspace environments.
+
+    Writes to ``/etc/profile.d/psyche-ros2.sh`` so that new shells have access
+    to ``ros2`` and workspace overlays.
+    """
+    snippet = f"""
+# Added by PSYCHE provisioning
+if [ -f /opt/ros/jazzy/setup.sh ]; then
+  . /opt/ros/jazzy/setup.sh
+fi
+if [ -f {HOME_DIR}/ros2_ws/install/setup.sh ]; then
+  . {HOME_DIR}/ros2_ws/install/setup.sh
+fi
+""".lstrip()
+    p = pathlib.Path("/etc/profile.d/psyche-ros2.sh")
+    p.write_text(snippet)
+    try:
+        os.chmod(p, 0o644)
+    except Exception:
+        pass
+
+
 def launch_hrs04(cfg: dict, run=subprocess.run) -> None:
     """Install systemd unit for an HRS04 ultrasonic sensor node.
 
@@ -470,6 +493,7 @@ def main() -> None:
     ensure_ssh_keys()
     ensure_python_env()
     install_zeno()
+    ensure_shell_env()
     if "voice" in services or "logticker" in services:
         install_voice_packages()
     if "asr" in services:
