@@ -275,15 +275,17 @@ def setup_workspace(run=subprocess.run) -> None:
     )
 
 
-def install_service_unit(name: str, cmd: list[str], run=subprocess.run) -> None:
+def install_service_unit(name: str, cmd: list[str], run=subprocess.run, pre: list[str] | None = None) -> None:
     """Create and enable a systemd unit for a service.
 
     Args:
         name: Service identifier.
         cmd: Command list executed by the unit.
+        pre: Optional list of shell commands to run as ``ExecStartPre``.
 
     Examples:
         >>> install_service_unit('demo', ['echo', 'hi'])  # doctest: +SKIP
+        >>> install_service_unit('with-pre', ['echo','ok'], pre=['/sbin/modprobe i2c-dev'])  # doctest: +SKIP
     """
     unit_path = SYSTEMD_DIR / f"psyche-{name}.service"
     wrapped = (
@@ -291,6 +293,10 @@ def install_service_unit(name: str, cmd: list[str], run=subprocess.run) -> None:
         f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1; "
         f"[ -f {HOME_DIR}/ros2_ws/install/setup.bash ] && source {HOME_DIR}/ros2_ws/install/setup.bash >/dev/null 2>&1 || true; "
         f"{' '.join(cmd)}'"
+    )
+    # Render optional ExecStartPre lines
+    pre_lines = "\n".join(
+        f"ExecStartPre=/bin/bash -lc '{p}'" for p in (pre or [])
     )
     unit_content = f"""[Unit]
 Description=PSYCHE {name} service
@@ -309,6 +315,7 @@ WorkingDirectory={HOME_DIR}
 StandardOutput=journal
 StandardError=journal
 SupplementaryGroups=audio i2c gpio
+{pre_lines}
 ExecStart={wrapped}
 
 [Install]
@@ -539,7 +546,9 @@ def launch_display(cfg: dict, run=subprocess.run) -> None:
         "--i2c-address", address,
         *topics,
     ]
-    install_service_unit("display", cmd, run)
+    # Ensure I2C character device is available before starting the display
+    pre = ["/sbin/modprobe i2c-dev || /usr/sbin/modprobe i2c-dev || true"]
+    install_service_unit("display", cmd, run, pre=pre)
 
 
 def install_ros2(run=subprocess.run) -> None:
@@ -711,6 +720,25 @@ def install_pi_hw_packages(run=subprocess.run) -> None:
     run(["usermod", "-aG", "gpio", SERVICE_USER], check=True)
     run(["usermod", "-aG", "i2c", SERVICE_USER], check=True)
     _venv_pip_install(["luma.oled", "Pillow"], run)
+    # Best-effort: enable I2C at boot on Raspberry Pi and load module now
+    try:
+        with open("/proc/device-tree/model", "rb") as fh:
+            is_pi = b"Raspberry Pi" in fh.read()
+    except Exception:
+        is_pi = False
+    if is_pi:
+        cfg_path = pathlib.Path("/boot/firmware/config.txt")
+        if not cfg_path.exists():
+            cfg_path = pathlib.Path("/boot/config.txt")
+        try:
+            content = cfg_path.read_text() if cfg_path.exists() else ""
+            if "dtparam=i2c_arm=on" not in content:
+                new = (content.rstrip() + "\n" + "dtparam=i2c_arm=on\n") if content else "dtparam=i2c_arm=on\n"
+                cfg_path.write_text(new)
+        except Exception:
+            pass
+        # Load i2c-dev immediately so /dev/i2c-* is available without reboot
+        run(["/bin/bash", "-lc", "/sbin/modprobe i2c-dev || /usr/sbin/modprobe i2c-dev || true"], check=False)
 
 
 def install_asr_packages(run=subprocess.run) -> None:

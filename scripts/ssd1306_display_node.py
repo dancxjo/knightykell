@@ -46,6 +46,13 @@ class DisplayNode(Node):
         qos = QoSProfile(depth=10)
         for t in self._topics:
             self.create_subscription(String, t, self._on_string, qos)
+        # Show a small splash so the OLED visibly turns on even before messages
+        try:
+            self._buf.append("Display ready")
+            self._render()
+        except Exception:
+            # Non-fatal if initial render fails; subscriptions may still work
+            pass
 
     def _on_string(self, msg: String) -> None:
         self._buf.append(msg.data)
