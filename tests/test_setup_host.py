@@ -122,8 +122,8 @@ def test_install_voice_packages_installs_piper():
         calls.append(cmd)
 
     install_voice_packages(fake_run)
-    # Ensure piper is installed via apt
-    assert ["apt-get", "install", "-y", "piper"] in calls
+    # Ensure Piper TTS is installed into the venv via pip
+    assert any("piper-tts" in c for cmd in calls for c in cmd)
 
 
 def test_ensure_service_user_adds_user(monkeypatch):
