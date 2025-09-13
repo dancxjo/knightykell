@@ -68,7 +68,7 @@ What provisioning installs
 - ROS 2 Jazzy (adds apt repo/key if missing), `python3-colcon-common-extensions`
 - Service user `pete`, workspace at `/home/pete/ros2_ws` (built with `colcon`)
 - Zenoh via pip
-- Voice dependencies: `espeak-ng`, `mbrola`, `mbrola-us1`
+- Voice dependencies: `espeak-ng`, `mbrola`, `mbrola-en1`
 - ASR dependencies: `whisper`, `webrtcvad`, `sounddevice`
 - Systemd services (prefixed `psyche-`) that source ROS env before launching
 

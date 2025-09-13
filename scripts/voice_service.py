@@ -22,17 +22,17 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-VOICE = "mb-en"
+VOICE = "mb-en1"
 
 
 class VoiceNode(Node):
     """Speak queued messages via ``espeak-ng``.
 
     Args:
-        voice: espeak-ng voice identifier (e.g., ``"mb-en"``).
+        voice: espeak-ng voice identifier (e.g., ``"mb-en1"``).
 
     Examples:
-        >>> VoiceNode(voice="mb-en")  # doctest: +SKIP
+        >>> VoiceNode(voice="mb-en1")  # doctest: +SKIP
     """
 
     def __init__(self, voice: str = VOICE) -> None:

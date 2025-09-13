@@ -122,7 +122,7 @@ def test_install_voice_packages_installs_espeak():
         calls.append(cmd)
 
     install_voice_packages(fake_run)
-    assert ["apt-get", "install", "-y", "espeak-ng", "mbrola", "mbrola-us1"] in calls
+    assert ["apt-get", "install", "-y", "espeak-ng", "mbrola", "mbrola-en1"] in calls
 
 
 def test_ensure_service_user_adds_user(monkeypatch):

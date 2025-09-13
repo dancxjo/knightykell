@@ -579,7 +579,7 @@ def install_voice_packages(run=subprocess.run) -> None:
         >>> calls[0][:3]
         ['apt-get', 'install', '-y']
     """
-    run(["apt-get", "install", "-y", "espeak-ng", "mbrola", "mbrola-us1"], check=True)
+    run(["apt-get", "install", "-y", "espeak-ng", "mbrola", "mbrola-en1"], check=True)
 
 
 def install_pi_hw_packages(run=subprocess.run) -> None:
