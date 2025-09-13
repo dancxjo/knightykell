@@ -20,7 +20,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-VOICE = "mb-us1"
+VOICE = "mb-en"
 
 
 class VoiceNode(Node):
