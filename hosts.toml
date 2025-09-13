@@ -7,6 +7,13 @@ trig_pin = 17
 echo_pin = 27
 [hosts.brainstem.display]
 topics = ["/sensor/range"]
+driver = "sh1106"
+width = 128
+height = 64
+port = 1
+address = "0x3C"
+rotate = 0
+h_offset = 2
 [hosts.brainstem.asr]
 model = "tiny"
 [hosts.cerebellum]
