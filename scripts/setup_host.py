@@ -123,6 +123,30 @@ def script_path(name: str) -> str:
     return str(fallback)
 
 
+def stage_runtime_assets() -> None:
+    """Copy service scripts and config to /opt/psyche for runtime use.
+
+    Ensures units can run even if the repo is moved or unavailable later.
+    """
+    opt = pathlib.Path("/opt/psyche")
+    scripts_src = REPO_DIR / "scripts"
+    opt.mkdir(parents=True, exist_ok=True)
+    (opt / "scripts").mkdir(parents=True, exist_ok=True)
+    for name in (
+        "voice_service.py",
+        "log_ticker.py",
+        "asr_service.py",
+        "hrs04_node.py",
+        "ssd1306_display_node.py",
+    ):
+        src = scripts_src / name
+        if src.exists():
+            shutil.copy2(src, opt / "scripts" / name)
+    # Copy hosts.toml so firstboot/setup can find it under /opt/psyche
+    if CONFIG_PATH.exists():
+        shutil.copy2(CONFIG_PATH, opt / "hosts.toml")
+
+
 def ros2_pkg_exists(name: str, run=subprocess.run) -> bool:
     """Return True if a ROS 2 package ``name`` is discoverable.
 
@@ -177,12 +201,19 @@ def clone_repo(run=subprocess.run) -> None:
     Examples:
         >>> clone_repo(lambda cmd, check: None)  # doctest: +SKIP
     """
-    if REPO_DIR.exists():
-        return
     src = os.environ.get("PSYCHE_SRC")
     if src and pathlib.Path(src).exists():
-        shutil.copytree(src, REPO_DIR)
+        # Mirror local source into REPO_DIR (update in place)
+        REPO_DIR.mkdir(parents=True, exist_ok=True)
+        for item in pathlib.Path(src).iterdir():
+            dst = REPO_DIR / item.name
+            if item.is_dir():
+                shutil.copytree(item, dst, dirs_exist_ok=True)
+            else:
+                shutil.copy2(item, dst)
         run(["chown", "-R", f"{SERVICE_USER}:{SERVICE_USER}", str(REPO_DIR)], check=True)
+        return
+    if REPO_DIR.exists():
         return
     run(
         ["sudo", "-u", SERVICE_USER, "git", "clone", REPO_URL, str(REPO_DIR)],
@@ -538,6 +569,7 @@ def main() -> None:
     # Install ROS first so colcon and env are available for builds
     install_ros2()
     clone_repo()
+    stage_runtime_assets()
     setup_workspace()
     ensure_ssh_keys()
     ensure_python_env()
