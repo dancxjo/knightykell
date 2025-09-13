@@ -149,6 +149,8 @@ def stage_runtime_assets() -> None:
         "asr_service.py",
         "hrs04_node.py",
         "ssd1306_display_node.py",
+        "oled_splash.py",
+        "oled_clear.py",
     ):
         src = scripts_src / name
         if src.exists():
