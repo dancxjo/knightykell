@@ -539,12 +539,32 @@ def install_ros2(run=subprocess.run) -> None:
         run(["pip", "install", "colcon-common-extensions"], check=False)
 
 
+def _venv_pip_install(packages: list[str], run=subprocess.run) -> None:
+    """Install Python packages into the service virtualenv.
+
+    Uses the service user's ``uv`` if present for speed and reliability,
+    otherwise falls back to the venv's ``pip``.
+
+    Examples:
+        >>> calls = []
+        >>> _venv_pip_install(['example-pkg'], lambda cmd, check: calls.append(cmd))
+        >>> any('example-pkg' in c for cmd in calls for c in cmd)
+        True
+    """
+    uv = HOME_DIR / ".local/bin/uv"
+    py = str(VENV_DIR / "bin/python")
+    pip = str(VENV_DIR / "bin/pip")
+    if uv.exists():
+        run([str(uv), "pip", "install", "-p", py, *packages], check=True)
+    else:
+        run([pip, "install", *packages], check=True)
+
+
 def install_zeno(run=subprocess.run) -> None:
     """Install zenoh client in the service virtualenv.
 
     Prefers the ``eclipse-zenoh`` package. If unavailable, falls back to the
-    legacy ``zenoh`` name with pre-releases permitted. Uses ``uv`` when
-    available; otherwise uses the venv's ``pip``.
+    legacy ``zenoh`` name with pre-releases permitted.
 
     Examples:
         >>> calls = []
@@ -552,19 +572,10 @@ def install_zeno(run=subprocess.run) -> None:
         >>> any('zenoh' in c for cmd in calls for c in cmd)
         True
     """
-    uv = HOME_DIR / ".local/bin/uv"
-    py = str(VENV_DIR / "bin/python")
-    pip = str(VENV_DIR / "bin/pip")
-    if uv.exists():
-        try:
-            run([str(uv), "pip", "install", "-p", py, "eclipse-zenoh"], check=True)
-        except Exception:
-            run([str(uv), "pip", "install", "--prerelease=allow", "-p", py, "zenoh"], check=True)
-    else:
-        try:
-            run([pip, "install", "eclipse-zenoh"], check=True)
-        except Exception:
-            run([pip, "install", "--pre", "zenoh"], check=True)
+    try:
+        _venv_pip_install(["eclipse-zenoh"], run)
+    except Exception:
+        _venv_pip_install(["--pre", "zenoh"], run)
 
 
 def install_voice_packages(run=subprocess.run) -> None:
@@ -589,21 +600,18 @@ def install_pi_hw_packages(run=subprocess.run) -> None:
     - Venv: luma.oled, Pillow
     """
     run(["apt-get", "install", "-y", "python3-rpi.gpio", "python3-gpiozero", "i2c-tools"], check=True)
-    # Ensure service user can access /dev/i2c-* by being in the 'i2c' group
+    # Ensure service user can access GPIO and I2C devices
+    run(["usermod", "-aG", "gpio", SERVICE_USER], check=True)
     run(["usermod", "-aG", "i2c", SERVICE_USER], check=True)
-    uv = HOME_DIR / ".local/bin/uv"
-    pkgs = ["luma.oled", "Pillow"]
-    if uv.exists():
-        run([str(uv), "pip", "install", "-p", str(VENV_DIR / "bin/python"), *pkgs], check=True)
-    else:
-        run([str(VENV_DIR / "bin/pip"), "install", *pkgs], check=True)
+    _venv_pip_install(["luma.oled", "Pillow"], run)
 
 
 def install_asr_packages(run=subprocess.run) -> None:
     """Install speech recognition dependencies into the service virtualenv.
 
-    Installs ``whisper``, ``webrtcvad``, and ``sounddevice``. Uses ``uv`` if
-    available, otherwise falls back to the venv's ``pip``.
+    Installs ``openai-whisper`` (importable as ``whisper``), ``webrtcvad``, and
+    ``sounddevice`` in the service virtualenv. Also ensures ``ffmpeg`` is
+    available via apt as it is used by Whisper for decoding when needed.
 
     Examples:
         >>> calls = []
@@ -611,12 +619,10 @@ def install_asr_packages(run=subprocess.run) -> None:
         >>> any('whisper' in c for cmd in calls for c in cmd)
         True
     """
-    pkgs = ["whisper", "webrtcvad", "sounddevice"]
-    uv = HOME_DIR / ".local/bin/uv"
-    if uv.exists():
-        run([str(uv), "pip", "install", "-p", str(VENV_DIR / "bin/python"), *pkgs], check=True)
-    else:
-        run([str(VENV_DIR / "bin/pip"), "install", *pkgs], check=True)
+    # Ensure ffmpeg exists for audio decoding
+    run(["apt-get", "install", "-y", "ffmpeg"], check=True)
+    # Install Python packages into the venv
+    _venv_pip_install(["openai-whisper", "webrtcvad", "sounddevice"], run)
 
 def ensure_python_env(run=subprocess.run) -> None:
     """Ensure Python tooling and a venv for the service user.

@@ -10,5 +10,5 @@
 - Use `make image HOSTS="<names>"` to build Raspberry Pi images for hosts.
 - Mark Raspberry Pi hosts with `image = "rpi"` in `hosts.toml`; hosts without it won't get images but still provision at boot.
 - Install speech packages `espeak-ng`, `mbrola`, and `mbrola-en1` for the voice service.
-- Install Python packages `whisper`, `webrtcvad`, and `sounddevice` for the ASR service.
+- Install Python packages `openai-whisper`, `webrtcvad`, and `sounddevice` for the ASR service.
 - Update docstring examples and tests when host names or services change.
