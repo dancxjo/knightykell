@@ -422,8 +422,8 @@ def install_ros2(run=subprocess.run) -> None:
             check=True,
         )
     run(["apt-get", "update"], check=True)
-    # Install ROS base + CycloneDDS RMW
-    run(["apt-get", "install", "-y", "ros-jazzy-ros-base", "ros-jazzy-rmw-cyclonedds-cpp", "ros-dev-cyclonedds"], check=True)
+    # Install ROS base + CycloneDDS RMW (rmw package includes required runtime)
+    run(["apt-get", "install", "-y", "ros-jazzy-ros-base", "ros-jazzy-rmw-cyclonedds-cpp"], check=True)
     # Install colcon from apt; if that fails at runtime, pip fallback happens later in build
     try:
         run(["apt-get", "install", "-y", "python3-colcon-common-extensions"], check=True)
