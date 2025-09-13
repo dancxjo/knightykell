@@ -12,6 +12,8 @@ Examples:
 """
 from __future__ import annotations
 
+import argparse
+import os
 import queue
 import subprocess
 import threading
@@ -26,12 +28,16 @@ VOICE = "mb-en"
 class VoiceNode(Node):
     """Speak queued messages via ``espeak-ng``.
 
+    Args:
+        voice: espeak-ng voice identifier (e.g., ``"mb-en"``).
+
     Examples:
-        >>> VoiceNode()  # doctest: +SKIP
+        >>> VoiceNode(voice="mb-en")  # doctest: +SKIP
     """
 
-    def __init__(self) -> None:
+    def __init__(self, voice: str = VOICE) -> None:
         super().__init__("voice")
+        self.voice = voice
         self._queue: queue.Queue[str] = queue.Queue()
         self._proc: subprocess.Popen | None = None
         self.create_subscription(String, "voice", self.enqueue, 10)
@@ -53,15 +59,21 @@ class VoiceNode(Node):
         """Continuously speak queued messages."""
         while rclpy.ok():
             text = self._queue.get()
-            self._proc = subprocess.Popen(["espeak-ng", "-v", VOICE, text])
+            self._proc = subprocess.Popen(["espeak-ng", "-v", self.voice, text])
             self._proc.wait()
             self._proc = None
 
 
 def main() -> None:
-    """Start the voice node."""
+    """Start the voice node.
+
+    Respects ``VOICE`` environment variable and ``--voice`` CLI argument.
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--voice", default=os.getenv("VOICE", VOICE))
+    ns = parser.parse_args()
     rclpy.init()
-    node = VoiceNode()
+    node = VoiceNode(voice=ns.voice)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
