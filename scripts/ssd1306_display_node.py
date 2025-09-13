@@ -16,7 +16,7 @@ from std_msgs.msg import String
 
 try:
     from luma.core.interface.serial import i2c
-    from luma.oled.device import ssd1306
+    from luma.oled.device import ssd1306, sh1106, ssd1309
     from PIL import ImageDraw, ImageFont, Image
     HAS_LUMA = True
 except Exception:
@@ -26,14 +26,22 @@ except Exception:
 class DisplayNode(Node):
     """Show the latest messages from given topics on the OLED."""
 
-    def __init__(self, topics: list[str]) -> None:
+    def __init__(self, topics: list[str], *, driver: str, width: int | None,
+                 height: int | None, port: int, address: int) -> None:
         super().__init__("display")
         if not HAS_LUMA:
             raise RuntimeError("luma.oled not available; install it first")
         self._buf: deque[str] = deque(maxlen=5)
         self._topics = topics or ["/sensor/range"]
-        self._serial = i2c(port=1, address=0x3C)
-        self._device = ssd1306(self._serial)
+        self._serial = i2c(port=port, address=address)
+        drv_map = {"ssd1306": ssd1306, "sh1106": sh1106, "ssd1309": ssd1309}
+        drv = drv_map.get(driver.lower(), ssd1306)
+        kw = {}
+        if width:
+            kw["width"] = int(width)
+        if height:
+            kw["height"] = int(height)
+        self._device = drv(self._serial, **kw)
         self._font = ImageFont.load_default()
         qos = QoSProfile(depth=10)
         for t in self._topics:
@@ -53,9 +61,22 @@ class DisplayNode(Node):
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("topics", nargs="*", default=["/sensor/range"])
+    parser.add_argument("--driver", default="ssd1306",
+                        help="oled driver: ssd1306|sh1106|ssd1309")
+    parser.add_argument("--width", type=int, default=128)
+    parser.add_argument("--height", type=int, default=64)
+    parser.add_argument("--i2c-port", type=int, default=1)
+    parser.add_argument("--i2c-address", type=lambda x: int(x, 0), default=0x3C)
     ns = parser.parse_args(argv)
     rclpy.init()
-    node = DisplayNode(ns.topics)
+    node = DisplayNode(
+        ns.topics,
+        driver=ns.driver,
+        width=ns.width,
+        height=ns.height,
+        port=ns.i2c_port,
+        address=ns.i2c_address,
+    )
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
@@ -67,4 +88,3 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
-

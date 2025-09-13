@@ -452,7 +452,21 @@ def launch_display(cfg: dict, run=subprocess.run) -> None:
         >>> launch_display({'topics': ['/foo']})  # doctest: +SKIP
     """
     topics = cfg.get("topics", [])
-    cmd = [str(VENV_DIR / "bin/python"), script_path("ssd1306_display_node.py"), *topics]
+    driver = str(cfg.get("driver", "ssd1306"))
+    width = str(cfg.get("width", 128))
+    height = str(cfg.get("height", 64))
+    port = str(cfg.get("port", 1))
+    address = str(cfg.get("address", "0x3C"))
+    cmd = [
+        str(VENV_DIR / "bin/python"),
+        script_path("ssd1306_display_node.py"),
+        "--driver", driver,
+        "--width", width,
+        "--height", height,
+        "--i2c-port", port,
+        "--i2c-address", address,
+        *topics,
+    ]
     install_service_unit("display", cmd, run)
 
 
