@@ -15,6 +15,7 @@ import socket
 import subprocess
 import shutil
 import tomllib
+import re
 
 CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent / "hosts.toml"
 SSH_DIR = pathlib.Path("/etc/psyche-ssh")
@@ -104,6 +105,16 @@ def get_service_config(hostname: str, service: str, config: dict) -> dict:
         1
     """
     return config.get("hosts", {}).get(hostname, {}).get(service, {})
+
+
+def get_audio_config(hostname: str, config: dict) -> dict:
+    """Return optional audio configuration for ``hostname``.
+
+    Looks for ``[hosts.<name>.audio]`` table with optional keys:
+    - ``card``: ALSA card index (int)
+    - ``device``: ALSA PCM string (e.g., ``"hw:1,0"``)
+    """
+    return config.get("hosts", {}).get(hostname, {}).get("audio", {})
 
 
 def script_path(name: str) -> str:
@@ -331,6 +342,85 @@ def ensure_service_env() -> None:
         "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp",
     ]
     pathlib.Path("/etc/psyche.env").write_text("\n".join(lines) + "\n")
+
+
+def _detect_usb_audio_card() -> int | None:
+    """Return the ALSA card index for a USB audio device, if present.
+
+    Parses ``/proc/asound/cards`` and returns the first USB card, or ``None``.
+    """
+    try:
+        text = pathlib.Path("/proc/asound/cards").read_text()
+    except FileNotFoundError:
+        return None
+    for line in text.splitlines():
+        m = re.match(r"\s*(\d+)\s+\[.*\]:\s+USB", line)
+        if m:
+            try:
+                return int(m.group(1))
+            except ValueError:
+                continue
+    return None
+
+
+def ensure_audio(cfg: dict | None = None, run=subprocess.run) -> None:
+    """Install ALSA utils, add user to audio, and set default device.
+
+    Resolution order:
+    1. Use ``cfg['device']`` if provided.
+    2. Else use ``cfg['card']`` and default to ``hw:<card>,0``.
+    3. Else auto-detect first USB audio card and set as default.
+    Writes ``/etc/asound.conf`` and appends env vars into ``/etc/psyche.env``.
+    """
+    run(["apt-get", "install", "-y", "alsa-utils"], check=True)
+    run(["usermod", "-aG", "audio", SERVICE_USER], check=True)
+
+    card = None
+    device = None
+    if cfg:
+        card = cfg.get("card")
+        device = cfg.get("device")
+    if device is None and card is None:
+        card = _detect_usb_audio_card()
+    if device is None and card is not None:
+        device = f"hw:{card},0"
+
+    if card is None and device is None:
+        return  # nothing to configure
+
+    # Build asound.conf content
+    as_lines: list[str] = []
+    if card is not None:
+        as_lines += [f"defaults.pcm.card {card}", f"defaults.ctl.card {card}"]
+    if device is not None:
+        as_lines += [
+            "pcm.!default {",
+            "  type plug",
+            f"  slave.pcm \"{device}\"",
+            "}",
+        ]
+    if card is not None:
+        as_lines += [
+            "ctl.!default {",
+            "  type hw",
+            f"  card {card}",
+            "}",
+        ]
+    pathlib.Path("/etc/asound.conf").write_text("\n".join(as_lines) + "\n")
+
+    # Append environment for services
+    env_path = pathlib.Path("/etc/psyche.env")
+    extra: list[str] = []
+    if card is not None:
+        extra.append(f"ALSA_CARD={card}")
+    if device is not None:
+        extra += [f"ALSA_PCM={device}", f"AUDIODEV={device}"]
+    extra.append("ESPEAKNG_AUDIO_OUTPUT=alsa")
+    try:
+        with env_path.open("a") as fh:
+            fh.write("\n" + "\n".join(extra) + "\n")
+    except FileNotFoundError:
+        env_path.write_text("\n".join(extra) + "\n")
 
 
 def launch_hrs04(cfg: dict, run=subprocess.run) -> None:
@@ -580,6 +670,8 @@ def main() -> None:
         install_voice_packages()
     if "asr" in services:
         install_asr_packages()
+    if "voice" in services:
+        ensure_audio(get_audio_config(host, cfg))
     if any(s in services for s in ("hrs04", "display")):
         install_pi_hw_packages()
     installed: list[str] = []
