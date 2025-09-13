@@ -244,6 +244,8 @@ def install_service_unit(name: str, cmd: list[str], run=subprocess.run) -> None:
     unit_content = f"""[Unit]
 Description=PSYCHE {name} service
 After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -252,8 +254,6 @@ Environment=ROS_DISTRO=jazzy
 EnvironmentFile=-/etc/psyche.env
 Restart=on-failure
 RestartSec=2
-StartLimitIntervalSec=60
-StartLimitBurst=3
 WorkingDirectory={HOME_DIR}
 StandardOutput=journal
 StandardError=journal
@@ -361,6 +361,7 @@ def install_ros2(run=subprocess.run) -> None:
             "lsb-release",
             "software-properties-common",
             "ca-certificates",
+            "ripgrep",
         ],
         check=True,
     )
@@ -390,8 +391,8 @@ def install_ros2(run=subprocess.run) -> None:
             check=True,
         )
     run(["apt-get", "update"], check=True)
-    # Install ROS base
-    run(["apt-get", "install", "-y", "ros-jazzy-ros-base"], check=True)
+    # Install ROS base + CycloneDDS RMW
+    run(["apt-get", "install", "-y", "ros-jazzy-ros-base", "ros-jazzy-rmw-cyclonedds-cpp", "ros-dev-cyclonedds"], check=True)
     # Install colcon from apt; if that fails at runtime, pip fallback happens later in build
     try:
         run(["apt-get", "install", "-y", "python3-colcon-common-extensions"], check=True)
