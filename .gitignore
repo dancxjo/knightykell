@@ -5,3 +5,9 @@ cerebellum-*.img
 cerebellum-*.img.gz
 forebrain/tools/work/ubuntu_forebrain.img
 /images/*
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+scripts/__pycache__/setup_host.cpython-313.pyc

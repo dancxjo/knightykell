@@ -27,7 +27,10 @@ import whisper
 
 SAMPLE_RATE = 16_000
 FRAME_DURATION = 30  # ms
-FRAME_BYTES = int(SAMPLE_RATE * FRAME_DURATION / 1000) * 2  # 16-bit mono
+# Number of frames per VAD window (10/20/30 ms supported)
+FRAME_SAMPLES = SAMPLE_RATE * FRAME_DURATION // 1000
+# Raw bytes per frame window for int16 mono
+FRAME_BYTES = FRAME_SAMPLES * 2
 
 
 class AsrNode(Node):
@@ -48,9 +51,12 @@ class AsrNode(Node):
         self._frames: deque[bytes] = deque()
         self._buffer = bytearray()
         self._queue: queue.Queue[bytes] = queue.Queue()
+        # Use a raw stream so VAD receives 16-bit PCM bytes.
+        # blocksize must be specified in FRAMES, not bytes. Using bytes here
+        # doubles the duration and triggers webrtcvad "Error while processing frame".
         self._stream = sd.RawInputStream(
             samplerate=SAMPLE_RATE,
-            blocksize=FRAME_BYTES,
+            blocksize=FRAME_SAMPLES,
             channels=1,
             dtype="int16",
             callback=self._callback,
