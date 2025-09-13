@@ -299,6 +299,7 @@ RestartSec=2
 WorkingDirectory={HOME_DIR}
 StandardOutput=journal
 StandardError=journal
+SupplementaryGroups=audio i2c
 ExecStart={wrapped}
 
 [Install]
@@ -572,6 +573,8 @@ def install_pi_hw_packages(run=subprocess.run) -> None:
     - Venv: luma.oled, Pillow
     """
     run(["apt-get", "install", "-y", "python3-rpi.gpio", "python3-gpiozero", "i2c-tools"], check=True)
+    # Ensure service user can access /dev/i2c-* by being in the 'i2c' group
+    run(["usermod", "-aG", "i2c", SERVICE_USER], check=True)
     uv = HOME_DIR / ".local/bin/uv"
     pkgs = ["luma.oled", "Pillow"]
     if uv.exists():
