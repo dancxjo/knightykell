@@ -1,7 +1,7 @@
 [hosts]
 [hosts.brainstem]
 image = "rpi"
-services = ["voice", "logticker", "hrs04", "display", "asr"]
+services = ["voice", "logticker", "display", "asr"]
 [hosts.brainstem.hrs04]
 trig_pin = 17
 echo_pin = 27

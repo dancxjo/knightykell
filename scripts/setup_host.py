@@ -347,6 +347,45 @@ def ensure_service_env() -> None:
     pathlib.Path("/etc/psyche.env").write_text("\n".join(lines) + "\n")
 
 
+def ensure_voice_env(hostname: str, config: dict) -> None:
+    """Set Piper environment variables from host config.
+
+    Reads optional ``[hosts.<name>.voice]`` table with keys:
+    - ``model``: Piper model basename (e.g., ``en_US-lessac-high``)
+    - ``voices_dir``: Directory for Piper models (default ``/opt/piper/voices``)
+
+    Writes values to ``/etc/psyche.env`` so the systemd unit picks them up.
+
+    Examples:
+        >>> cfg = {'hosts': {'h': {'voice': {'model': 'en_US-lessac-high'}}}}
+        >>> ensure_voice_env('h', cfg)  # doctest: +SKIP
+    """
+    env_path = pathlib.Path("/etc/psyche.env")
+    env: dict[str, str] = {}
+    try:
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k] = v
+    except Exception:
+        # Ignore read errors in restricted environments/tests
+        pass
+    vcfg = get_service_config(hostname, "voice", config)
+    if vcfg:
+        if "model" in vcfg:
+            env["PIPER_MODEL"] = str(vcfg["model"])
+        if "voices_dir" in vcfg:
+            env["PIPER_VOICES_DIR"] = str(vcfg["voices_dir"])
+    # Write back
+    env_lines = [f"{k}={v}" for k, v in env.items()]
+    try:
+        env_path.write_text("\n".join(env_lines) + "\n")
+    except Exception:
+        # Ignore write errors in restricted environments/tests
+        pass
+
+
 def _detect_usb_audio_card() -> int | None:
     """Return the ALSA card index for a USB audio device, if present.
 
@@ -579,7 +618,10 @@ def install_zeno(run=subprocess.run) -> None:
 
 
 def install_voice_packages(run=subprocess.run) -> None:
-    """Install speech synthesis packages.
+    """Install Piper TTS and a default voice model.
+
+    - Installs ``piper`` via apt
+    - Creates ``/opt/piper/voices`` and fetches ``en_US-amy-medium`` model
 
     Args:
         run: Callable used to execute shell commands.
@@ -587,10 +629,28 @@ def install_voice_packages(run=subprocess.run) -> None:
     Examples:
         >>> calls = []
         >>> install_voice_packages(lambda cmd, check: calls.append(cmd))
-        >>> calls[0][:3]
-        ['apt-get', 'install', '-y']
+        >>> any('piper' in c for cmd in calls for c in cmd)
+        True
     """
-    run(["apt-get", "install", "-y", "espeak-ng", "mbrola", "mbrola-en1"], check=True)
+    voices_dir = pathlib.Path("/opt/piper/voices")
+    run(["apt-get", "install", "-y", "piper"], check=True)
+    voices_dir.mkdir(parents=True, exist_ok=True)
+    # Download a pleasant default English voice (Lessac, high)
+    base = voices_dir
+    model = base / "en_US-lessac-high.onnx"
+    config = base / "en_US-lessac-high.onnx.json"
+    if not model.exists():
+        run([
+            "curl", "-fsSL",
+            "-o", str(model),
+            "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/high/en_US-lessac-high.onnx?download=true",
+        ], check=True)
+    if not config.exists():
+        run([
+            "curl", "-fsSL",
+            "-o", str(config),
+            "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/high/en_US-lessac-high.onnx.json?download=true",
+        ], check=True)
 
 
 def install_pi_hw_packages(run=subprocess.run) -> None:
@@ -691,6 +751,9 @@ def main() -> None:
     install_zeno()
     ensure_shell_env()
     ensure_service_env()
+    # Write Piper env overrides from host config, if present
+    if "voice" in services:
+        ensure_voice_env(host, cfg)
     if "voice" in services or "logticker" in services:
         install_voice_packages()
     if "asr" in services:

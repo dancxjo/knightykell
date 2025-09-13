@@ -115,14 +115,15 @@ def test_install_zeno_installs_zenoh():
     assert any("zenoh" in c for cmd in calls for c in cmd)
 
 
-def test_install_voice_packages_installs_espeak():
+def test_install_voice_packages_installs_piper():
     calls = []
 
     def fake_run(cmd, check):
         calls.append(cmd)
 
     install_voice_packages(fake_run)
-    assert ["apt-get", "install", "-y", "espeak-ng", "mbrola", "mbrola-en1"] in calls
+    # Ensure piper is installed via apt
+    assert ["apt-get", "install", "-y", "piper"] in calls
 
 
 def test_ensure_service_user_adds_user(monkeypatch):

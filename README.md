@@ -58,6 +58,10 @@ trig_pin = 17
 echo_pin = 27
 [hosts.brainstem.display]
 topics = ["/sensor/range"]
+[hosts.brainstem.voice]
+# Optional: override Piper model and voices dir
+model = "en_US-lessac-high"
+voices_dir = "/opt/piper/voices"
 [hosts.brainstem.asr]
 model = "tiny"
 ```
@@ -68,7 +72,7 @@ What provisioning installs
 - ROS 2 Jazzy (adds apt repo/key if missing), `python3-colcon-common-extensions`
 - Service user `pete`, workspace at `/home/pete/ros2_ws` (built with `colcon`)
 - Zenoh via pip
-- Voice dependencies: `espeak-ng`, `mbrola`, `mbrola-en1`
+- Voice dependencies: `piper` plus default voice (Lessac, high). Models are downloaded to `/opt/piper/voices`.
 - ASR dependencies: `openai-whisper`, `webrtcvad`, `sounddevice` (plus `ffmpeg`)
 - Systemd services (prefixed `psyche-`) that source ROS env before launching
 
