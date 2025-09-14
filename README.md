@@ -155,6 +155,38 @@ Notes
 - Units automatically source `/opt/ros/$ROS_DISTRO` (default jazzy) and the local workspace.
 - For offline provisioning, the installer and `make provision` both copy from a local source checkout (no git required).
 
+ROS 2 Dev Container
+-------------------
+
+Run ROS 2 locally in Docker and join the same LAN ROS graph as your hosts (e.g., `cerebellum`) using host networking:
+
+- Build the image:
+
+```
+make ros2-dev-image
+```
+
+- Run the container with host networking (enables multicast discovery):
+
+```
+make ros2-dev-run
+```
+
+This starts a shell with ROS 2 Jazzy preinstalled and the repo mounted at `/opt/psyche`. The environment sets `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` and sources `/opt/ros/jazzy` automatically. From inside the container, you can list topics from `cerebellum`:
+
+```
+ros2 topic list
+```
+
+Notes:
+- Host networking (`--network host`) is required on Linux for DDS multicast discovery across the LAN.
+- The default workspace is `/opt/ros2_ws` (empty by default). If you want to build packages, create sources under `/opt/ros2_ws/src` and run `colcon build` in the container.
+- To mirror the on-host provisioning inside the container (build workspace, install deps, etc.), run inside the container:
+
+```
+env PSYCHE_SRC=/opt/psyche python3 /opt/psyche/scripts/setup_host.py
+```
+
 Autoinstall (forebrain)
 -----------------------
 
