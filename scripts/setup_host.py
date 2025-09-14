@@ -2458,6 +2458,8 @@ def main() -> None:
         except Exception:
             ccfg = None
         if ccfg and str(ccfg.get("backend", "")).lower() in {"hf", "transformers", "huggingface"}:
+            print("[setup] installing NVIDIA drivers/CUDA (if GPU present)…")
+            install_cuda_if_available()
             print("[setup] installing Hugging Face transformers (chat)…")
             install_hf_chat()
     prefetch_cfg = (cfg.get("hosts", {}).get(host, {}).get("assets", {}).get("prefetch", {}) or {})
