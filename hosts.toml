@@ -1,4 +1,5 @@
 [hosts]
+
 [hosts.brainstem]
 image = "rpi"
 services = ["voice"]
@@ -23,10 +24,12 @@ h_offset = 2
 model = "tiny"
 
 
-
+[hosts.latimer]
+services = ["voice", "logticker", "logsummarizer"]
 
 [hosts.forebrain]
 services = ["voice", "logticker", "logsummarizer"]
+
 [hosts.monitor]
 image = "rpi"
 services = ["voice", "logticker", "logsummarizer"]

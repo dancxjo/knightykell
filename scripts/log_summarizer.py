@@ -28,7 +28,7 @@ Examples:
 
     With llama-cpp-python::
 
-        $ export LLAMA_MODEL_PATH=/models/TinyLlama-1.1B-Chat.Q4_K_M.gguf
+        $ export LLAMA_MODEL_PATH=/models/Meta-Llama-3.2-1B-Instruct.Q4_K_M.gguf
         $ python3 log_summarizer.py  # doctest: +SKIP
 """
 from __future__ import annotations

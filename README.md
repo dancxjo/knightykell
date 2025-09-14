@@ -198,7 +198,7 @@ Default embedded models and fetching helpers
 -------------------------------------------
 
 - Embedded defaults during provisioning:
-  - LLM: TinyLlama 1.1B Chat Q4_K_M (`tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf`) → `$LLAMA_MODELS_DIR`
+  - LLM: Llama 3.2 1B Instruct Q4_K_M (`Meta-Llama-3.2-1B-Instruct.Q4_K_M.gguf`) → `$LLAMA_MODELS_DIR`
   - ASR: Whisper `tiny` model warmed into `$XDG_CACHE_HOME`
   - Both happen automatically at provisioning time (best-effort, network required). If assets are baked into the image via `ASSETS_SEED_DIR`, they will be copied into the fixed asset paths on first boot.
 
@@ -210,10 +210,10 @@ Default embedded models and fetching helpers
 # Fetch defaults into seed layout (useful before image build)
 python3 scripts/fetch_models.py --defaults
 
-# Fetch Whisper tiny+base into system cache path, and TinyLlama GGUF into models dir
+# Fetch Whisper tiny+base into system cache path, and Llama 3.2 1B Instruct GGUF into models dir
 XDG_CACHE_HOME=/opt/psyche/cache \
 LLAMA_MODELS_DIR=/opt/llama/models \
-python3 scripts/fetch_models.py --whisper tiny base --llama tinyllama-q4_k_m
+python3 scripts/fetch_models.py --whisper tiny base --llama llama32-1b-instruct-q4_k_m
 ```
 
 - hosts.toml-based prefetch:
@@ -222,6 +222,8 @@ python3 scripts/fetch_models.py --whisper tiny base --llama tinyllama-q4_k_m
 [hosts.brainstem.assets.prefetch]
 whisper = ["tiny", "base"]
 llama = ["tinyllama-q4_k_m", "https://example.com/OtherModel.gguf"]
+# or
+# llama = ["llama32-1b-instruct-q4_k_m", "https://example.com/OtherModel.gguf"]
 ```
 
 Provisioning reads this and fetches at install time.

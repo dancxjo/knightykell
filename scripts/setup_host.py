@@ -911,19 +911,19 @@ def prefetch_whisper_model(name: str = "tiny", run=subprocess.run) -> None:
 
 
 def install_default_assets(run=subprocess.run) -> None:
-    """Install small default models: TinyLlama GGUF and Whisper tiny.
+    """Install small default models: Llama 3.2 1B Instruct GGUF and Whisper tiny.
 
-    - Downloads TinyLlama 1.1B Chat Q4_K_M GGUF into ``LLAMA_MODELS_DIR`` if
+    - Downloads Llama 3.2 1B Instruct Q4_K_M GGUF into ``LLAMA_MODELS_DIR`` if
       not already present.
     - Warms Whisper ``tiny`` model cache in ``XDG_CACHE_HOME`` (if whisper is installed).
     """
-    # TinyLlama default GGUF
+    # Llama 3.2 1B Instruct default GGUF
     models_dir = pathlib.Path(os.getenv("LLAMA_MODELS_DIR") or _read_env_file_var("LLAMA_MODELS_DIR", "/opt/llama/models") or "/opt/llama/models")
     models_dir.mkdir(parents=True, exist_ok=True)
-    tiny_name = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
-    target = models_dir / tiny_name
+    llama32_name = "Meta-Llama-3.2-1B-Instruct.Q4_K_M.gguf"
+    target = models_dir / llama32_name
     if not target.exists():
-        url = "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf?download=true"
+        url = "https://huggingface.co/TheBloke/Meta-Llama-3.2-1B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-1B-Instruct.Q4_K_M.gguf?download=true"
         try:
             fetch_llama_model(url, str(models_dir), run)
         except Exception:
@@ -941,7 +941,8 @@ def ensure_assets_prefetch(hostname: str, config: dict, run=subprocess.run) -> N
         llama = ["<url or known name>", ...]
 
     Known llama names:
-        - tinyllama-q4_k_m -> TinyLlama 1.1B Chat v1.0 Q4_K_M GGUF
+        - llama32-1b-instruct-q4_k_m -> Llama 3.2 1B Instruct Q4_K_M GGUF
+        - tinyllama-q4_k_m -> TinyLlama 1.1B Chat v1.0 Q4_K_M GGUF (legacy)
     """
     pre = config.get("hosts", {}).get(hostname, {}).get("assets", {}).get("prefetch", {})
     if not isinstance(pre, dict):
@@ -954,6 +955,7 @@ def ensure_assets_prefetch(hostname: str, config: dict, run=subprocess.run) -> N
             continue
     # Llama models
     known = {
+        "llama32-1b-instruct-q4_k_m": "https://huggingface.co/TheBloke/Meta-Llama-3.2-1B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-1B-Instruct.Q4_K_M.gguf?download=true",
         "tinyllama-q4_k_m": "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf?download=true",
     }
     dest = os.getenv("LLAMA_MODELS_DIR") or _read_env_file_var("LLAMA_MODELS_DIR", "/opt/llama/models") or "/opt/llama/models"
@@ -1065,7 +1067,7 @@ def launch_updater(run=subprocess.run) -> None:
         f"/bin/bash -lc '"
         f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1; "
         f"[ -f {HOME_DIR}/ros2_ws/install/setup.bash ] && source {HOME_DIR}/ros2_ws/install/setup.bash >/dev/null 2>&1 || true; "
-        f"{VENV_DIR}/bin/python {script_path('git_updater.py')}"'
+        f"{VENV_DIR}/bin/python {script_path('git_updater.py')}'"
     )
     svc = f"""[Unit]
 Description=PSYCHE Auto Update
@@ -1271,7 +1273,7 @@ def main() -> None:
     install_host_tools()
     # Install embedded defaults and any requested prefetches
     try:
-        print("[setup] fetching default models (TinyLlama, Whisper tiny)…")
+        print("[setup] fetching default models (Llama 3.2 1B Instruct, Whisper tiny)…")
         install_default_assets()
         print("[setup] prefetching configured assets (hosts.toml)…")
         ensure_assets_prefetch(host, cfg)
