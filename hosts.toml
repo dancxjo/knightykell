@@ -44,6 +44,5 @@ backend = "llama"  # prefer local llama-cpp-python over Ollama
 gguf_url = "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf"
 
 
-[hosts.monitor]
-image = "rpi"
-services = ["voice", "logticker"]
+[hosts.latimer]
+services = []
