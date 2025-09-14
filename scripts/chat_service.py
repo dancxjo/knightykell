@@ -36,6 +36,7 @@ import shlex
 import shutil
 import subprocess
 from typing import List, TypedDict
+import sys
 import pathlib
 
 import rclpy
@@ -147,13 +148,14 @@ class ChatNode(Node):
         if prompt:
             self._messages.append({"role": "system", "content": prompt})
         self._backend = _select_backend()
-        # If backend is unavailable, try to fetch a local GGUF and reselect
+        # If backend is unavailable, try to fetch model and runtime, then reselect
         if not self._backend:
             try:
                 self._ensure_llama_model()
+                self._ensure_llama_runtime()
                 self._backend = _select_backend()
-            except Exception:
-                pass
+            except Exception as e:
+                self._last_error = f"init: {e}"
         if isinstance(self._backend, _OllamaBackend):
             self.get_logger().info(f"chat: backend=ollama model={self._backend.model}")
         elif isinstance(self._backend, _LlamaCppBackend):
@@ -206,6 +208,22 @@ class ChatNode(Node):
                 self._last_error = f"download failed: {e}"
                 return
         os.environ["LLAMA_MODEL_PATH"] = str(out)
+
+    def _ensure_llama_runtime(self) -> None:
+        """Ensure ``llama-cpp-python`` is available in the environment.
+
+        Attempts an in-process installation via ``python -m pip install`` if
+        the import is missing. No-op if already importable.
+        """
+        try:
+            import llama_cpp  # type: ignore
+            return
+        except Exception:
+            pass
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "-q", "llama-cpp-python"], check=True)
+        except Exception as e:
+            self._last_error = f"llama-cpp install failed: {e}"
 
     def _on_asr(self, msg: String) -> None:
         text = (msg.data or "").strip()
