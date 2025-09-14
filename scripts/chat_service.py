@@ -36,6 +36,7 @@ import shlex
 import shutil
 import subprocess
 from typing import List, TypedDict
+import pathlib
 
 import rclpy
 from rclpy.node import Node
@@ -146,6 +147,13 @@ class ChatNode(Node):
         if prompt:
             self._messages.append({"role": "system", "content": prompt})
         self._backend = _select_backend()
+        # If backend is unavailable, try to fetch a local GGUF and reselect
+        if not self._backend:
+            try:
+                self._ensure_llama_model()
+                self._backend = _select_backend()
+            except Exception:
+                pass
         if isinstance(self._backend, _OllamaBackend):
             self.get_logger().info(f"chat: backend=ollama model={self._backend.model}")
         elif isinstance(self._backend, _LlamaCppBackend):
@@ -163,6 +171,41 @@ class ChatNode(Node):
         except Exception:
             interval = 10.0
         self.create_timer(interval, self._publish_status)
+
+    def _ensure_llama_model(self) -> None:
+        """Ensure a llama.cpp GGUF is present if using local backend.
+
+        Attempts to download a default Llama 3.2 1B Instruct Q4_K_M model when
+        ``LLAMA_MODEL_PATH`` is unset or points to a missing file. Honors
+        ``LLAMA_MODELS_DIR`` for destination. If ``OLLAMA_MODEL`` is set and
+        Ollama is available, this method does nothing (Ollama handles pulls).
+        """
+        # If Ollama is available, skip (it will pull as needed)
+        if _has_cmd("ollama"):
+            return
+        mp = os.getenv("LLAMA_MODEL_PATH")
+        if mp and os.path.exists(mp):
+            return
+        # Choose destination directory
+        models_dir = pathlib.Path(os.getenv("LLAMA_MODELS_DIR", "/opt/llama/models"))
+        try:
+            models_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return
+        # Determine URL (allow override via LLAMA_GGUF_URL)
+        url = os.getenv(
+            "LLAMA_GGUF_URL",
+            "https://huggingface.co/TheBloke/Meta-Llama-3.2-1B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-1B-Instruct.Q4_K_M.gguf?download=true",
+        )
+        fname = url.split("/")[-1].split("?")[0] or "model.gguf"
+        out = models_dir / fname
+        if not out.exists():
+            try:
+                subprocess.run(["curl", "-fsSL", "-o", str(out), url], check=True)
+            except Exception as e:
+                self._last_error = f"download failed: {e}"
+                return
+        os.environ["LLAMA_MODEL_PATH"] = str(out)
 
     def _on_asr(self, msg: String) -> None:
         text = (msg.data or "").strip()

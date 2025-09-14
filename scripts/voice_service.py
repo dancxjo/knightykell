@@ -23,6 +23,7 @@ import os
 import queue
 import subprocess
 import threading
+import pathlib
 
 import rclpy
 from rclpy.node import Node
@@ -57,6 +58,13 @@ class VoiceNode(Node):
         self._pub_done = self.create_publisher(String, "voice_done", 10)
         self.create_subscription(String, "voice", self.enqueue, 10)
         self.create_subscription(String, "voice_interrupt", self.interrupt, 10)
+        # Ensure Piper model files exist; attempt runtime fetch if missing
+        try:
+            self._ensure_piper_model()
+            # Reload sample rate if config just appeared
+            self.sample_rate = self._load_sample_rate(self.config_path)
+        except Exception:
+            pass
         threading.Thread(target=self._worker, daemon=True).start()
 
     @staticmethod
@@ -87,6 +95,41 @@ class VoiceNode(Node):
         self._procs.clear()
         with self._queue.mutex:  # type: ignore[attr-defined]
             self._queue.queue.clear()  # type: ignore[attr-defined]
+
+    def _ensure_piper_model(self) -> None:
+        """Ensure the configured Piper model files are present.
+
+        Downloads ``<model>.onnx`` and ``<model>.onnx.json`` into
+        ``PIPER_VOICES_DIR`` when missing. Uses rhasspy/piper-voices URLs by
+        default; can be overridden via ``PIPER_MODEL_URL`` and
+        ``PIPER_CONFIG_URL`` env vars.
+        """
+        m = self.model
+        voices = pathlib.Path(self.voices_dir)
+        try:
+            voices.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return
+        model_url = os.getenv(
+            "PIPER_MODEL_URL",
+            f"https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/high/{m}.onnx?download=true",
+        )
+        cfg_url = os.getenv(
+            "PIPER_CONFIG_URL",
+            f"https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/high/{m}.onnx.json?download=true",
+        )
+        mp = pathlib.Path(self.model_path)
+        cp = pathlib.Path(self.config_path)
+        if not mp.exists():
+            try:
+                subprocess.run(["curl", "-fsSL", "-o", str(mp), model_url], check=True)
+            except Exception:
+                pass
+        if not cp.exists():
+            try:
+                subprocess.run(["curl", "-fsSL", "-o", str(cp), cfg_url], check=True)
+            except Exception:
+                pass
 
     def _worker(self) -> None:
         """Continuously speak queued messages."""
