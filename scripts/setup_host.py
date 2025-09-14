@@ -758,16 +758,16 @@ def ensure_ros2_extra_repos(hostname: str, config: dict, run=subprocess.run) -> 
     except Exception:
         pass
     # Attempt rosdep + build (best-effort)
-    # Some third-party drivers (e.g., HLDS LDS) expect Boost::system.
+    # Some third-party drivers (e.g., HLDS LDS/libcreate) expect Boost components.
     # Ensure Boost dev headers are available even if rosdep skips.
     try:
-        run(["apt-get", "install", "-y", "libboost-dev", "libboost-system-dev"], check=False)
+        run(["apt-get", "install", "-y", "libboost-dev", "libboost-system-dev", "libboost-thread-dev"], check=False)
     except Exception:
         pass
     try:
         run([
             "bash", "-lc",
-            f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && rosdep install --from-paths src --ignore-src -r -y",
+            f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && command -v rosdep >/dev/null 2>&1 && rosdep update && rosdep install --from-paths src --ignore-src -r -y || true",
         ], check=False)
     except Exception:
         pass
