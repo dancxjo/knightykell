@@ -39,8 +39,8 @@ baud = 57600
 period = 60
 
 [hosts.cerebellum.fortune]
-# Emit a fortune every 5 minutes and also show a desktop notification if available
-period = 300
+# Emit a fortune every minute and also show a desktop notification if available
+period = 60
 notify_send = true
 all = true
 offensive = false

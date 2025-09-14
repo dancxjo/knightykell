@@ -22,6 +22,7 @@ import random
 import subprocess
 import time
 from typing import Optional
+import shutil
 
 import rclpy
 from rclpy.node import Node
@@ -41,7 +42,9 @@ FALLBACKS = [
 
 def _run_fortune(use_all: bool = False, offensive: bool = False) -> Optional[str]:
     try:
-        args = ["fortune", "-s"]
+        # Resolve fortune binary; often installed at /usr/games/fortune
+        exe = shutil.which("fortune") or "/usr/games/fortune"
+        args = [exe, "-s"]
         if use_all:
             args.insert(1, "-a")
         if offensive:

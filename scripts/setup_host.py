@@ -534,7 +534,7 @@ def ensure_service_env() -> None:
     and ROS tools are on PATH for all units.
     """
     lines = [
-        f"PATH={VENV_DIR}/bin:/opt/ros/jazzy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin",
+        f"PATH={VENV_DIR}/bin:/opt/ros/jazzy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/usr/games:/usr/local/games",
         "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp",
         # Force gpiozero to use modern lgpio backend (works on Pi 5)
         "GPIOZERO_PIN_FACTORY=lgpio",
