@@ -531,11 +531,16 @@ def install_service_unit(name: str, cmd: list[str], run=subprocess.run, pre: lis
     """
     unit_path = SYSTEMD_DIR / f"psyche-{name}.service"
     ros_setup = f"/opt/ros/{ROS_DISTRO}/setup.bash"
+    # Prefer executing via `uv run` if available for better isolation and speed,
+    # but fall back to running with the venv's python directly.
+    cmd_str = " ".join(cmd)
     wrapped = (
         f"/bin/bash -lc '"
         f"source {ros_setup} >/dev/null 2>&1; "
         f"[ -f {WORKSPACE}/install/setup.bash ] && source {WORKSPACE}/install/setup.bash >/dev/null 2>&1 || true; "
-        f"{' '.join(cmd)}'"
+        f"if [ \"${{PSYCHE_USE_UV:-1}}\" != \"0\" ] && command -v uv >/dev/null 2>&1; then "
+        f"uv run -p {VENV_DIR}/bin/python {cmd_str}; "
+        f"else {cmd_str}; fi'"
     )
     # Always ensure the virtualenv exists before starting, but don't fail hard.
     ensure_venv_pre = (
@@ -679,7 +684,7 @@ def ensure_service_env() -> None:
     """
     cuda_bin = "/usr/local/cuda/bin"
     cuda_lib = "/usr/local/cuda/lib64"
-    path_val = f"{VENV_DIR}/bin:/opt/ros/{ROS_DISTRO}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/usr/games:/usr/local/games"
+    path_val = f"{VENV_DIR}/bin:/opt/ros/{ROS_DISTRO}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/usr/games:/usr/local/games:{HOME_DIR}/.local/bin"
     try:
         if pathlib.Path(cuda_bin).exists():
             path_val = path_val + f":{cuda_bin}"
@@ -1156,7 +1161,17 @@ def launch_display(cfg: dict, run=subprocess.run) -> None:
         *topics,
     ]
     # Ensure I2C character device is available before starting the display
-    pre = ["/sbin/modprobe i2c-dev || /usr/sbin/modprobe i2c-dev || true"]
+    # and best-effort ensure luma.oled + Pillow are importable inside the venv.
+    pre = [
+        "/sbin/modprobe i2c-dev || /usr/sbin/modprobe i2c-dev || true",
+        # Try importing luma and Pillow; if it fails, install minimal deps into the venv.
+        # Prefer no-deps for luma packages to avoid pulling Pillow wheels unnecessarily.
+        (
+            f"{VENV_DIR}/bin/python -c 'import luma.oled, PIL' "
+            f"|| {VENV_DIR}/bin/pip install --no-deps luma.oled luma.core smbus2 "
+            f"|| {VENV_DIR}/bin/pip install \"Pillow<=10.3.0\" luma.oled luma.core smbus2 || true"
+        ),
+    ]
     install_service_unit("display", cmd, run, pre=pre)
 
 
