@@ -167,6 +167,7 @@ def stage_runtime_assets() -> None:
         "topic_list_service.py",
         "retry_exec.py",
         "create_singer.py",
+        "notify_to_voice.py",
         "oled_splash.py",
         "oled_clear.py",
         "fetch_models.py",
@@ -1374,6 +1375,16 @@ def launch_topics(run=subprocess.run) -> None:
     install_service_unit("topics", cmd, run)
 
 
+def launch_notify(run=subprocess.run) -> None:
+    """Install systemd unit bridging desktop notifications to voice.
+
+    Examples:
+        >>> launch_notify(lambda cmd, check: None)  # doctest: +SKIP
+    """
+    cmd = [str(VENV_DIR / "bin/python"), script_path("notify_to_voice.py")]
+    install_service_unit("notify", cmd, run)
+
+
         
 
 
@@ -1625,6 +1636,10 @@ def main() -> None:
             print("[setup] launching topics service…")
             launch_topics()
             installed.append("topics")
+        elif svc == "notify":
+            print("[setup] launching notification bridge…")
+            launch_notify()
+            installed.append("notify")
         elif svc == "chat":
             print("[setup] launching chat service…")
             launch_chat()

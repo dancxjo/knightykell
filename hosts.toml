@@ -10,9 +10,9 @@ echo_pin = 27
 [hosts.cerebellum]
 image = "ubuntu"
 model="pi5"
-services = ["voice", "logticker", "display", "topics", "create", "singer"]
+services = ["voice", "logticker", "display", "topics", "notify", "asr", "create", "singer"]
 [hosts.cerebellum.display]
-topics = ["/logs", "/topics"]
+topics = ["/logs", "/topics", "/status/notify"]
 driver = "sh1106"
 width = 128
 height = 64
@@ -20,17 +20,18 @@ port = 1
 address = "0x3C"
 rotate = 0
 h_offset = 2
-extra = "Pete Knightykell"  # optional extra bottom-line text
+extra = ""  # optional extra bottom-line text
 [hosts.cerebellum.asr]
 model = "tiny"
 
 [hosts.cerebellum.create]
-# Adjust to match the AutonomyLab stack you’ve cloned
-package = "create_robot"           # e.g., create_robot or create_bringup
-launch_file = "bringup.launch.py"  # e.g., bringup.launch.py or minimal.launch.py
-port = "/dev/ttyUSB0"             # serial port for the Create base
-# params = { frame_id = "base_link" }
-# args = ["--ros-args", "-p", "foo:=bar"]
+# AutonomyLab Create 1 bringup (via create_bringup)
+package = "create_bringup"
+launch_file = "create_1.launch"
+# Use 'params.dev' for the serial device as expected by create_bringup
+params = { dev = "/dev/ttyUSB0" }
+# Additional launch args (optional): desc:=false to skip robot description
+# args = ["desc:=false"]
 
 [hosts.cerebellum.singer]
 port = "/dev/ttyUSB0"  # reuse create port
