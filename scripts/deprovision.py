@@ -26,6 +26,7 @@ from typing import Iterable
 
 SERVICE_USER = os.getenv("PSYCHE_USER", "root")
 HOME_DIR = pathlib.Path(f"/home/{SERVICE_USER}") if SERVICE_USER != "root" else pathlib.Path("/root")
+ROS_DISTRO = os.getenv("ROS_DISTRO", "jazzy").strip()
 SYSTEMD_DIR = pathlib.Path("/etc/systemd/system")
 
 
@@ -113,7 +114,7 @@ def remove_user_files(remove_user: bool = False) -> None:
 def purge_ros() -> None:
     # Best-effort purge of ROS2 Jazzy packages
     try:
-        run(["apt-get", "purge", "-y", "ros-jazzy-*", "ros-dev-tools"], check=False)
+        run(["apt-get", "purge", "-y", f"ros-{ROS_DISTRO}-*", "ros-dev-tools"], check=False)
         run(["apt-get", "autoremove", "-y"], check=False)
     except Exception:
         pass
@@ -123,7 +124,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Deprovision PSYCHE from host")
     parser.add_argument("--remove-user", action="store_true", help="Delete the service user and its home directory")
     parser.add_argument("--assets", action="store_true", help="Also remove model caches under /opt/llama/models and /opt/piper/voices")
-    parser.add_argument("--purge-ros", action="store_true", help="Apt purge ROS packages (ros-jazzy-*)")
+    parser.add_argument("--purge-ros", action="store_true", help="Apt purge ROS packages (ros-$ROS_DISTRO-*)")
     ns = parser.parse_args(argv)
 
     if os.geteuid() != 0:

@@ -1,7 +1,7 @@
 PSYCHE Provisioning
 ===================
 
-Universal, repeatable provisioning for Ubuntu 24.04 hosts that sets up ROS 2 Jazzy, a ROS 2 workspace, and systemd services for voice, ASR, sensors, and display — all driven by `hosts.toml`.
+Universal, repeatable provisioning for Ubuntu 24.04 hosts that sets up ROS 2 (default: Jazzy, configurable via `ROS_DISTRO`), a ROS 2 workspace, and systemd services for voice, ASR, sensors, and display — all driven by `hosts.toml`.
 
 Quick Start (one‑liner)
 -----------------------
@@ -46,7 +46,7 @@ echo $AMENT_PREFIX_PATH     # should include /opt/ros2_ws/install
 - Run the quick sanity script (publishes to `/status/notify` for the OLED):
 
 ```
-sudo bash -lc 'source /opt/ros/jazzy/setup.bash; source /opt/ros2_ws/install/setup.bash; python3 /opt/psyche/scripts/first_boot_sanity.py'
+sudo bash -lc 'source /opt/ros/${ROS_DISTRO:-jazzy}/setup.bash; source /opt/ros2_ws/install/setup.bash; python3 /opt/psyche/scripts/first_boot_sanity.py'
 ```
 
 - You should see a line like `sanity: services ok 7/7 | miss:...` and the same on the OLED.
@@ -152,7 +152,7 @@ Notes
 -----
 
 - Designed for Ubuntu 24.04; `install_ros2()` is idempotent and safe to re‑run.
-- Units automatically source `/opt/ros/jazzy` and the local workspace.
+- Units automatically source `/opt/ros/$ROS_DISTRO` (default jazzy) and the local workspace.
 - For offline provisioning, the installer and `make provision` both copy from a local source checkout (no git required).
 
 Autoinstall (forebrain)
@@ -195,7 +195,7 @@ Expected `ASSETS_SEED_DIR` layout (any subset is fine):
 
 Internals:
 - The builder mounts the image partitions, stages `/opt/psyche`, and runs `/opt/psyche/provision_image.py <host>` inside chroot to install:
-  - ROS 2 base (Jazzy), zenoh, Python venv
+  - ROS 2 base (`$ROS_DISTRO`, default Jazzy), zenoh, Python venv
   - Voice/ASR deps (Piper, Whisper, sounddevice, webrtcvad)
   - llama-cpp-python for log summarizer
 - On first boot, `firstboot` completes host-specific setup (env, units, any remaining installs). Pre-seeded assets are copied into `/opt/llama/models`, `/opt/piper/voices`, and `/opt/psyche/cache`.
@@ -248,6 +248,14 @@ Configure via `hosts.toml`:
 ```
 [hosts.cerebellum]
 services = ["voice", "asr", "chat"]
+[hosts.cerebellum.ros2]
+# Optional: select distro (default: jazzy). Also supports env ROS_DISTRO.
+distro = "jazzy"
+# Optional: add extra ROS 2 repos; branch auto-selected per distro when omitted
+# repos = [
+#   "https://github.com/AutonomyLab/create_robot.git",  # branch set to jazzy/rolling automatically
+#   { url = "https://github.com/revyos-ros/libcreate.git" },  # branch defaults per distro
+# ]
 [hosts.cerebellum.chat]
 prompt = "You are a concise robot assistant."
 # Optional backend settings:

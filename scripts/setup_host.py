@@ -23,12 +23,47 @@ SSH_DIR = pathlib.Path("/etc/psyche-ssh")
 # Can be overridden via PSYCHE_USER environment variable at runtime if needed.
 SERVICE_USER = os.getenv("PSYCHE_USER", "root")
 HOME_DIR = pathlib.Path(f"/home/{SERVICE_USER}") if SERVICE_USER != "root" else pathlib.Path("/root")
+# ROS 2 distro selection (default jazzy). Can be overridden by env or hosts.toml.
+ROS_DISTRO = os.getenv("ROS_DISTRO", "jazzy").strip()
 REPO_URL = "https://example.com/psyche.git"
 # Place workspace and repo under /opt for easier admin access
 REPO_DIR = pathlib.Path("/opt/psyche")
 WORKSPACE = pathlib.Path("/opt/ros2_ws")
 SYSTEMD_DIR = pathlib.Path("/etc/systemd/system")
 VENV_DIR = REPO_DIR / ".venv"
+
+# Default branch suggestions for common third-party repos per ROS distro
+_REPO_BRANCH_DEFAULTS: dict[str, dict[str, str]] = {
+    # Create robot bringup
+    "github.com/autonomylab/create_robot.git": {
+        "jazzy": "jazzy",
+        "rolling": "rolling",
+    },
+    # libcreate fork commonly used with ROS 2
+    "github.com/revyos-ros/libcreate.git": {
+        "jazzy": "fix-std-string",
+        "rolling": "main",
+    },
+    # Drivers/utilities that generally track main
+    "github.com/clydemcqueen/opencv_cam.git": {
+        "default": "main",
+    },
+    "github.com/hiwad-aziz/ros2_mpu6050_driver.git": {
+        "default": "main",
+    },
+}
+
+def _infer_repo_branch(url: str) -> str | None:
+    """Return a sensible default branch for a repo URL based on ROS_DISTRO.
+
+    Falls back to a 'default' mapping or None if unknown.
+    """
+    u = url.lower()
+    for key, mapping in _REPO_BRANCH_DEFAULTS.items():
+        if key in u:
+            # Prefer exact distro, else default
+            return mapping.get(ROS_DISTRO.lower()) or mapping.get("default")
+    return None
 
 
 def load_config(path: pathlib.Path | str = CONFIG_PATH) -> dict:
@@ -235,9 +270,10 @@ def ros2_pkg_exists(name: str, run=subprocess.run) -> bool:
         >>> isinstance(ros2_pkg_exists('rclpy'), bool)
         True
     """
+    ros_setup = f"/opt/ros/{ROS_DISTRO}/setup.bash"
     proc = run([
         "bash", "-lc",
-        "source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && ros2 pkg prefix " + name + " >/dev/null 2>&1"
+        f"source {ros_setup} >/dev/null 2>&1 && ros2 pkg prefix {name} >/dev/null 2>&1"
     ], check=False)
     return getattr(proc, "returncode", 1) == 0
 
@@ -418,7 +454,7 @@ def setup_workspace(run=subprocess.run) -> None:
             [
                 "bash",
                 "-lc",
-                f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && command -v rosdep >/dev/null 2>&1 && rosdep update && rosdep install --from-paths src --ignore-src -r -y || true",
+                f"source /opt/ros/{ROS_DISTRO}/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && command -v rosdep >/dev/null 2>&1 && rosdep update && rosdep install --from-paths src --ignore-src -r -y || true",
             ],
             check=False,
         )
@@ -430,7 +466,7 @@ def setup_workspace(run=subprocess.run) -> None:
             [
                 "bash",
                 "-lc",
-                f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
+                f"source /opt/ros/{ROS_DISTRO}/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
             ],
             check=True,
         )
@@ -442,7 +478,7 @@ def setup_workspace(run=subprocess.run) -> None:
                 SERVICE_USER,
                 "bash",
                 "-lc",
-                f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
+                f"source /opt/ros/{ROS_DISTRO}/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
             ],
             check=True,
         )
@@ -461,9 +497,10 @@ def install_service_unit(name: str, cmd: list[str], run=subprocess.run, pre: lis
         >>> install_service_unit('with-pre', ['echo','ok'], pre=['/sbin/modprobe i2c-dev'])  # doctest: +SKIP
     """
     unit_path = SYSTEMD_DIR / f"psyche-{name}.service"
+    ros_setup = f"/opt/ros/{ROS_DISTRO}/setup.bash"
     wrapped = (
         f"/bin/bash -lc '"
-        f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1; "
+        f"source {ros_setup} >/dev/null 2>&1; "
         f"[ -f {WORKSPACE}/install/setup.bash ] && source {WORKSPACE}/install/setup.bash >/dev/null 2>&1 || true; "
         f"{' '.join(cmd)}'"
     )
@@ -480,7 +517,7 @@ StartLimitBurst=3
 [Service]
 Type=simple
 User={SERVICE_USER}
-Environment=ROS_DISTRO=jazzy
+Environment=ROS_DISTRO={ROS_DISTRO}
 EnvironmentFile=-/etc/psyche.env
 Restart=on-failure
 RestartSec=2
@@ -558,14 +595,15 @@ def ensure_shell_env() -> None:
     Writes to ``/etc/profile.d/psyche-ros2.sh`` so that new shells have access
     to ``ros2`` and workspace overlays.
     """
+    ros_setup_sh = f"/opt/ros/{ROS_DISTRO}/setup.sh"
     snippet = f"""
 # Added by PSYCHE provisioning
 # Load service environment (RMW, DOMAIN_ID, etc.) if present
 if [ -f /etc/psyche.env ]; then
   . /etc/psyche.env
 fi
-if [ -f /opt/ros/jazzy/setup.sh ]; then
-  . /opt/ros/jazzy/setup.sh
+if [ -f {ros_setup_sh} ]; then
+  . {ros_setup_sh}
 fi
 if [ -f {WORKSPACE}/install/setup.sh ]; then
   . {WORKSPACE}/install/setup.sh
@@ -590,7 +628,7 @@ def ensure_service_env() -> None:
     and ROS tools are on PATH for all units.
     """
     lines = [
-        f"PATH={VENV_DIR}/bin:/opt/ros/jazzy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/usr/games:/usr/local/games",
+        f"PATH={VENV_DIR}/bin:/opt/ros/{ROS_DISTRO}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/usr/games:/usr/local/games",
         "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp",
         # Force gpiozero to use modern lgpio backend (works on Pi 5)
         "GPIOZERO_PIN_FACTORY=lgpio",
@@ -757,9 +795,12 @@ def ensure_ros2_extra_repos(hostname: str, config: dict, run=subprocess.run) -> 
     except Exception:
         host_services = []
     if "create" in host_services:
+        # Provide sensible default branches for common repos depending on ROS_DISTRO
+        def _branch_for(url: str) -> str | None:
+            return _infer_repo_branch(url)
         default_repos = [
-            {"url": "https://github.com/AutonomyLab/create_robot.git", "branch": "jazzy"},
-            {"url": "https://github.com/revyos-ros/libcreate.git", "branch": "fix-std-string"},
+            {"url": "https://github.com/AutonomyLab/create_robot.git", "branch": (_branch_for("https://github.com/AutonomyLab/create_robot.git") or "jazzy")},
+            {"url": "https://github.com/revyos-ros/libcreate.git", "branch": (_branch_for("https://github.com/revyos-ros/libcreate.git") or "main")},
         ]
         urls = set()
         for r in (repos or []):
@@ -798,10 +839,12 @@ def ensure_ros2_extra_repos(hostname: str, config: dict, run=subprocess.run) -> 
         for item in repos:
             try:
                 if isinstance(item, str):
-                    _clone(item)
+                    _clone(item, None, _infer_repo_branch(item))
                 elif isinstance(item, dict) and "url" in item:
                     dest = pathlib.Path(item.get("dest")) if item.get("dest") else None
                     branch = str(item.get("branch")) if item.get("branch") else None
+                    if not branch:
+                        branch = _infer_repo_branch(str(item["url"]))
                     _clone(str(item["url"]), dest, branch)
             except Exception:
                 continue
@@ -851,7 +894,7 @@ def ensure_ros2_extra_repos(hostname: str, config: dict, run=subprocess.run) -> 
     try:
         run([
             "bash", "-lc",
-            f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && command -v rosdep >/dev/null 2>&1 && rosdep update && rosdep install --from-paths src --ignore-src -r -y || true",
+            f"source /opt/ros/{ROS_DISTRO}/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && command -v rosdep >/dev/null 2>&1 && rosdep update && rosdep install --from-paths src --ignore-src -r -y || true",
         ], check=False)
     except Exception:
         pass
@@ -859,12 +902,12 @@ def ensure_ros2_extra_repos(hostname: str, config: dict, run=subprocess.run) -> 
         if SERVICE_USER == "root":
             run([
                 "bash", "-lc",
-                f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
+                f"source /opt/ros/{ROS_DISTRO}/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
             ], check=False)
         else:
             run([
                 "sudo", "-u", SERVICE_USER, "bash", "-lc",
-                f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
+                f"source /opt/ros/{ROS_DISTRO}/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
             ], check=False)
     except Exception:
         pass
@@ -890,6 +933,23 @@ def ensure_ros_network_env(hostname: str, config: dict) -> None:
             env["ROS_DOMAIN_ID"] = str(cfg["domain_id"])
     try:
         env_path.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n")
+    except Exception:
+        pass
+
+
+def resolve_ros_distro(hostname: str, config: dict) -> None:
+    """Resolve and set the global ROS distribution.
+
+    Priority: $ROS_DISTRO env > hosts.toml [hosts.<name>.ros2].distro > 'jazzy'.
+    """
+    global ROS_DISTRO
+    try:
+        if os.getenv("ROS_DISTRO"):
+            ROS_DISTRO = os.getenv("ROS_DISTRO", ROS_DISTRO)
+            return
+        cfg = config.get("hosts", {}).get(hostname, {}).get("ros2", {})
+        if isinstance(cfg, dict) and cfg.get("distro"):
+            ROS_DISTRO = str(cfg.get("distro")).strip()
     except Exception:
         pass
 
@@ -1027,7 +1087,7 @@ def launch_display(cfg: dict, run=subprocess.run) -> None:
 
 
 def install_ros2(run=subprocess.run) -> None:
-    """Install ROS 2 Jazzy on Ubuntu 24.04.
+    """Install ROS 2 base on Ubuntu 24.04 (configurable distro).
 
     Ensures the ROS 2 apt repository is configured and installs
     ``ros-jazzy-ros-base`` and ``python3-colcon-common-extensions``. If
@@ -1083,16 +1143,16 @@ def install_ros2(run=subprocess.run) -> None:
             check=True,
         )
     run(["apt-get", "update"], check=True)
-    # Install ROS base first (separate call to match tests)
-    run(["apt-get", "install", "-y", "ros-jazzy-ros-base"], check=True)
+    # Install ROS base first (separate call to match tests). Default jazzy.
+    run(["apt-get", "install", "-y", f"ros-{ROS_DISTRO}-ros-base"], check=True)
     # Optionally install CycloneDDS RMW for better performance
     try:
-        run(["apt-get", "install", "-y", "ros-jazzy-rmw-cyclonedds-cpp"], check=True)
+        run(["apt-get", "install", "-y", f"ros-{ROS_DISTRO}-rmw-cyclonedds-cpp"], check=True)
     except Exception:
         pass
     # Useful core packages for drivers and bringup (best-effort)
     try:
-        run(["apt-get", "install", "-y", "ros-jazzy-diagnostic-updater", "ros-jazzy-xacro"], check=False)
+        run(["apt-get", "install", "-y", f"ros-{ROS_DISTRO}-diagnostic-updater", f"ros-{ROS_DISTRO}-xacro"], check=False)
     except Exception:
         pass
     try:
@@ -1205,10 +1265,10 @@ def install_camera_ros_packages(run=subprocess.run) -> None:
     try:
         run([
             "apt-get", "install", "-y",
-            "ros-jazzy-camera-calibration-parsers",
-            "ros-jazzy-image-transport",
-            "ros-jazzy-image-transport-plugins",
-            "ros-jazzy-image-pipeline",
+            f"ros-{ROS_DISTRO}-camera-calibration-parsers",
+            f"ros-{ROS_DISTRO}-image-transport",
+            f"ros-{ROS_DISTRO}-image-transport-plugins",
+            f"ros-{ROS_DISTRO}-image-pipeline",
         ], check=True)
     except Exception:
         pass
@@ -1737,7 +1797,7 @@ def launch_updater(run=subprocess.run) -> None:
     timer_path = SYSTEMD_DIR / tmr_name
     wrapped = (
         f"/bin/bash -lc '"
-        f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1; "
+        f"source /opt/ros/{ROS_DISTRO}/setup.bash >/dev/null 2>&1; "
         f"[ -f {WORKSPACE}/install/setup.bash ] && source {WORKSPACE}/install/setup.bash >/dev/null 2>&1 || true; "
         f"{VENV_DIR}/bin/python {script_path('git_updater.py')}'"
     )
@@ -2101,6 +2161,8 @@ def main() -> None:
     """Entry point for host setup."""
     cfg = load_config()
     host = socket.gethostname()
+    # Resolve ROS distro from env or hosts.toml (default jazzy)
+    resolve_ros_distro(host, cfg)
     services = get_services(host, cfg)
     if not services:
         print(f"No services configured for {host}")
