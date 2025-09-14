@@ -727,6 +727,19 @@ def ensure_ros2_extra_repos(hostname: str, config: dict, run=subprocess.run) -> 
                 if "#include <cstdlib>" not in txt:
                     txt = txt.replace("#include <memory>", "#include <memory>\n#include <cstdlib>")
                 p.write_text(txt)
+        # Best-effort patch: ensure <array> header included for std::array usage
+        for p in src.rglob("mpu6050sensor.h"):
+            try:
+                h = p.read_text()
+            except Exception:
+                continue
+            if "#include <array>" not in h:
+                # Insert after the first include block
+                if "#include <unordered_map>" in h:
+                    h = h.replace("#include <unordered_map>", "#include <unordered_map>\n#include <array>")
+                else:
+                    h = "#include <array>\n" + h
+                p.write_text(h)
     except Exception:
         pass
     # Attempt rosdep + build (best-effort)
