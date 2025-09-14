@@ -53,6 +53,12 @@ Configuration
 [hosts]
 [hosts.brainstem]
 services = ["voice", "logticker", "logsummarizer", "hrs04", "display", "asr"]
+[hosts.brainstem.assets]
+# NVMe data volume for large models and caches
+label = "PSYCHE_DATA"        # filesystem label to mount (recommended)
+mount = "/mnt/psyche"        # mount point (created if missing)
+# device = "/dev/nvme0n1p1"  # optional explicit device path
+# format_if_empty = true      # only if you want auto-mkfs when blank
 [hosts.brainstem.hrs04]
 trig_pin = 17
 echo_pin = 27
@@ -86,6 +92,22 @@ Services
 - `psyche-hrs04.service`: Ultrasonic sensor node (pins from host config)
 - `psyche-display.service`: SSD1306 OLED topic display
 
+Assets storage (NVMe)
+---------------------
+
+Large assets (GGUF LLMs, Piper voices, Whisper caches) live under a single mount:
+
+- Recommended mount: `/mnt/psyche` with filesystem label `PSYCHE_DATA`.
+- Provisioning auto-creates `models/llama`, `piper/voices`, and `cache` under this mount and writes env defaults:
+  - `LLAMA_MODELS_DIR=/mnt/psyche/models/llama`
+  - `PIPER_VOICES_DIR=/mnt/psyche/piper/voices`
+  - `XDG_CACHE_HOME=/mnt/psyche/cache` (Whisper uses this for models)
+
+Headless setup tips (Raspberry Pi 5):
+- Pre-format the NVMe partition as ext4 and label it `PSYCHE_DATA`.
+- The provisioner will add an `/etc/fstab` entry and mount it automatically.
+- Optionally set `[hosts.<name>.assets.device]` and `format_if_empty = true` to allow first-boot formatting when blank.
+
 Log summarization
 -----------------
 
@@ -95,12 +117,22 @@ publishes a short English summary to the `voice` topic for speaking.
 
 Backends (auto-detected):
 - Ollama: set `OLLAMA_MODEL` (default `gpt-oss:20b`) and ensure `ollama` is installed
-- llama.cpp: set `LLAMA_MODEL_PATH` to a local `.gguf` model and install `llama-cpp-python`
+- llama.cpp: set `LLAMA_MODEL_PATH` to a local `.gguf` model and install `llama-cpp-python` (provisioner helper available)
 - Fallback: heuristic summary when no local LLM is available
 
 Environment overrides:
 - `SUMMARY_INTERVAL` (seconds, default `20`)
 - `SUMMARY_MAX_LINES` (default `200`)
+- `LLAMA_MODEL_PATH`, `LLAMA_THREADS`, `LLAMA_CTX`
+- `LLAMA_GRAMMAR_PATH` (GBNF file to constrain output)
+- `LLAMA_TEMP`, `LLAMA_TOP_K`, `LLAMA_TOP_P`, `LLAMA_MIN_P`, `LLAMA_REPEAT_PENALTY`, `LLAMA_MAX_TOKENS`
+
+Provisioning helpers
+--------------------
+
+- llama.cpp runtime: installer adds `llama-cpp-python` to the service venv.
+- Model download: set `hosts.<name>.logsummarizer.gguf_url` to fetch a `.gguf` into `/opt/llama/models` and write `LLAMA_MODEL_PATH` automatically.
+- Env from config: set options under `[hosts.<name>.logsummarizer]` (e.g., `interval`, `max_lines`, `threads`, `ctx`, `grammar_path`, `top_k`, `temp`, etc.).
 
 Notes
 -----

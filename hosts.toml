@@ -2,6 +2,9 @@
 [hosts.brainstem]
 image = "rpi"
 services = ["voice"]
+[hosts.brainstem.assets]
+label = "PSYCHE_DATA"
+mount = "/mnt/psyche"
 [hosts.brainstem.hrs04]
 trig_pin = 17
 echo_pin = 27
@@ -9,6 +12,9 @@ echo_pin = 27
 [hosts.cerebellum]
 image = "rpi"
 services = ["voice", "logticker", "logsummarizer", "display", "asr"]
+[hosts.cerebellum.assets]
+label = "PSYCHE_DATA"
+mount = "/mnt/psyche"
 [hosts.cerebellum.display]
 topics = ["/sensor/range"]
 driver = "sh1106"

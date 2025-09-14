@@ -23,6 +23,9 @@ from scripts.setup_host import (
     setup_workspace,
     launch_asr,
     install_asr_packages,
+    install_llama_cpp,
+    launch_logsummarizer,
+    fetch_llama_model,
 )
 
 
@@ -220,6 +223,20 @@ def test_launch_logticker_creates_systemd_unit(monkeypatch, tmp_path):
     assert ["systemctl", "enable", "--now", "psyche-logticker.service"] in calls
 
 
+def test_launch_logsummarizer_creates_systemd_unit(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr("scripts.setup_host.SYSTEMD_DIR", tmp_path)
+
+    def fake_run(cmd, check):
+        calls.append(cmd)
+
+    launch_logsummarizer(fake_run)
+    unit = tmp_path / "psyche-logsummarizer.service"
+    assert unit.exists()
+    assert "log_summarizer.py" in unit.read_text()
+    assert ["systemctl", "enable", "--now", "psyche-logsummarizer.service"] in calls
+
+
 def test_launch_asr_creates_systemd_unit(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr("scripts.setup_host.SYSTEMD_DIR", tmp_path)
@@ -233,6 +250,27 @@ def test_launch_asr_creates_systemd_unit(monkeypatch, tmp_path):
     content = unit.read_text()
     assert '--model base' in content
     assert ['systemctl', 'enable', '--now', 'psyche-asr.service'] in calls
+
+
+def test_install_llama_cpp_installs(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, check):
+        calls.append(cmd)
+
+    install_llama_cpp(fake_run)
+    assert any("llama-cpp" in c for cmd in calls for c in cmd)
+
+
+def test_fetch_llama_model_invokes_curl(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(cmd, check):
+        calls.append(cmd)
+
+    out = fetch_llama_model("https://example.com/model.Q4_K_M.gguf", str(tmp_path), fake_run)
+    assert out.endswith("model.Q4_K_M.gguf")
+    assert calls and calls[0][0] == "curl"
 
 
 def test_main_launches_configured_services(monkeypatch):

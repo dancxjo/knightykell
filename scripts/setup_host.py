@@ -26,6 +26,8 @@ REPO_DIR = HOME_DIR / "psyche"
 WORKSPACE = HOME_DIR / "ros2_ws"
 SYSTEMD_DIR = pathlib.Path("/etc/systemd/system")
 VENV_DIR = HOME_DIR / ".venv"
+ASSETS_DEFAULT_LABEL = "PSYCHE_DATA"
+ASSETS_DEFAULT_MOUNT = pathlib.Path("/mnt/psyche")
 
 
 def load_config(path: pathlib.Path | str = CONFIG_PATH) -> dict:
@@ -115,6 +117,18 @@ def get_audio_config(hostname: str, config: dict) -> dict:
     - ``device``: ALSA PCM string (e.g., ``"hw:1,0"``)
     """
     return config.get("hosts", {}).get(hostname, {}).get("audio", {})
+
+
+def get_assets_config(hostname: str, config: dict) -> dict:
+    """Return optional assets storage configuration for ``hostname``.
+
+    Looks for ``[hosts.<name>.assets]`` table with optional keys:
+    - ``label``: filesystem label to mount (default: ``PSYCHE_DATA``)
+    - ``mount``: mount point path (default: ``/mnt/psyche``)
+    - ``device``: explicit device path (e.g., ``/dev/nvme0n1p1``)
+    - ``format_if_empty``: bool; if true, mkfs when device has no FS
+    """
+    return config.get("hosts", {}).get(hostname, {}).get("assets", {})
 
 
 def script_path(name: str) -> str:
@@ -679,7 +693,7 @@ def install_voice_packages(run=subprocess.run) -> None:
         >>> any('piper-tts' in c for cmd in calls for c in cmd)
         True
     """
-    voices_dir = pathlib.Path("/opt/piper/voices")
+    voices_dir = pathlib.Path(os.getenv("PIPER_VOICES_DIR", "/opt/piper/voices"))
     # Ensure playback utility exists
     run(["apt-get", "install", "-y", "alsa-utils"], check=True)
     # Install Piper TTS into the venv to avoid GTK name conflicts with the mouse tool "piper"
@@ -760,6 +774,137 @@ def install_asr_packages(run=subprocess.run) -> None:
     # Install Python packages into the venv
     _venv_pip_install(["openai-whisper", "webrtcvad", "sounddevice"], run)
 
+
+def install_llama_cpp(run=subprocess.run) -> None:
+    """Install llama-cpp-python into the service virtualenv.
+
+    Installs minimal build tools when available to increase wheel success.
+
+    Examples:
+        >>> calls = []
+        >>> install_llama_cpp(lambda cmd, check: calls.append(cmd))
+        >>> any('llama-cpp' in c for cmd in calls for c in cmd)
+        True
+    """
+    # Best-effort tools (skip errors in restricted tests)
+    try:
+        run(["apt-get", "install", "-y", "cmake", "build-essential"], check=True)
+    except Exception:
+        pass
+    _venv_pip_install(["llama-cpp-python"], run)
+
+
+def fetch_llama_model(url: str, dest_dir: str | None = None, run=subprocess.run) -> str | None:
+    """Download a GGUF model from ``url`` to ``dest_dir`` and return its path.
+
+    If ``dest_dir`` is omitted, uses ``$LLAMA_MODELS_DIR`` or ``/opt/llama/models``. Creates the
+    directory if needed.
+
+    Examples:
+        >>> fetch_llama_model('https://example.com/model.gguf', '/tmp/llama', lambda cmd, check: None)  # doctest: +SKIP
+        '/tmp/llama/model.gguf'
+    """
+    base = pathlib.Path(dest_dir or os.getenv("LLAMA_MODELS_DIR", "/opt/llama/models"))
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    fname = url.split("/")[-1].split("?")[0]
+    if not fname.endswith(".gguf"):
+        # If URL lacks filename, pick a default
+        fname = "model.gguf"
+    out = base / fname
+    run(["curl", "-fsSL", "-o", str(out), url], check=True)
+    return str(out)
+
+
+def ensure_assets_storage(hostname: str, config: dict, run=subprocess.run) -> None:
+    """Ensure a persistent mount for large assets and write env defaults.
+
+    - Mounts a labeled device (default label ``PSYCHE_DATA``) at
+      ``/mnt/psyche`` (configurable per host under ``assets``)
+    - Creates standard subdirectories under the mount:
+      - ``models/llama`` for GGUFs
+      - ``piper/voices`` for Piper models
+      - ``cache`` for XDG caches (Whisper, HF, etc.)
+    - Writes defaults to ``/etc/psyche.env``:
+      - ``LLAMA_MODELS_DIR`` -> ``<mount>/models/llama``
+      - ``PIPER_VOICES_DIR`` -> ``<mount>/piper/voices`` (if not already set)
+      - ``XDG_CACHE_HOME`` -> ``<mount>/cache``
+
+    If ``assets.format_if_empty`` is true and the device has no filesystem,
+    it will be formatted ext4 with the specified label.
+    """
+    acfg = get_assets_config(hostname, config)
+    label = str(acfg.get("label", ASSETS_DEFAULT_LABEL))
+    mount = pathlib.Path(str(acfg.get("mount", str(ASSETS_DEFAULT_MOUNT))))
+    device = acfg.get("device")
+    fmt = bool(acfg.get("format_if_empty", False))
+
+    # Resolve device by label if not provided
+    by_label = pathlib.Path("/dev/disk/by-label") / label
+    dev_path = pathlib.Path(device) if device else by_label
+
+    # Ensure mountpoint exists
+    try:
+        mount.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+    # Try to detect filesystem; if absent and allowed, format
+    try:
+        proc = run(["blkid", str(dev_path)], check=False)
+        has_fs = getattr(proc, "returncode", 1) == 0
+        if not has_fs and fmt and device:
+            run(["mkfs.ext4", "-F", "-L", label, device], check=True)
+            has_fs = True
+    except Exception:
+        has_fs = False
+
+    # Write /etc/fstab entry using LABEL= for portability
+    fstab_line = f"LABEL={label} {mount} ext4 noatime,nofail,x-systemd.automount 0 2\n"
+    try:
+        fstab = pathlib.Path("/etc/fstab")
+        content = fstab.read_text() if fstab.exists() else ""
+        if f" {mount} " not in content and f"LABEL={label} " not in content:
+            with fstab.open("a") as fh:
+                fh.write(fstab_line)
+        # Attempt to mount now (best effort)
+        run(["systemctl", "daemon-reload"], check=False)
+        run(["mount", str(mount)], check=False)
+    except Exception:
+        pass
+
+    # Ensure standard directories
+    llama_dir = mount / "models" / "llama"
+    voices_dir = mount / "piper" / "voices"
+    cache_dir = mount / "cache"
+    for d in (llama_dir, voices_dir, cache_dir):
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
+    # Merge env defaults
+    env_path = pathlib.Path("/etc/psyche.env")
+    env: dict[str, str] = {}
+    try:
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k] = v
+    except Exception:
+        pass
+    env.setdefault("LLAMA_MODELS_DIR", str(llama_dir))
+    env.setdefault("PIPER_VOICES_DIR", str(voices_dir))
+    env.setdefault("XDG_CACHE_HOME", str(cache_dir))
+    try:
+        env_path.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n")
+    except Exception:
+        pass
+
+
 def ensure_python_env(run=subprocess.run) -> None:
     """Ensure Python tooling and a venv for the service user.
 
@@ -821,6 +966,77 @@ def launch_logsummarizer(run=subprocess.run) -> None:
     install_service_unit("logsummarizer", cmd, run)
 
 
+def ensure_logsummarizer_env(hostname: str, config: dict) -> None:
+    """Write environment for the log summarizer from host config.
+
+    Reads optional ``[hosts.<name>.logsummarizer]`` keys and writes
+    variables into ``/etc/psyche.env``. Supported keys:
+    - ``interval`` -> ``SUMMARY_INTERVAL``
+    - ``max_lines`` -> ``SUMMARY_MAX_LINES``
+    - ``model_path`` -> ``LLAMA_MODEL_PATH``
+    - ``threads`` -> ``LLAMA_THREADS``
+    - ``ctx`` -> ``LLAMA_CTX``
+    - ``grammar_path`` -> ``LLAMA_GRAMMAR_PATH``
+    - ``top_k``/``top_p``/``min_p``/``temp``/``repeat_penalty``/``max_tokens`` -> corresponding ``LLAMA_*`` vars
+    - ``gguf_url``: if provided, attempts to download the file and set ``LLAMA_MODEL_PATH``
+    - ``ollama_model`` -> ``OLLAMA_MODEL`` (for alternate backend)
+
+    Examples:
+        >>> cfg = {'hosts': {'h': {'logsummarizer': {'interval': 10, 'model_path': '/m.gguf'}}}}
+        >>> ensure_logsummarizer_env('h', cfg)  # doctest: +SKIP
+    """
+    env_path = pathlib.Path("/etc/psyche.env")
+    env: dict[str, str] = {}
+    try:
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k] = v
+    except Exception:
+        pass
+    lcfg = get_service_config(hostname, "logsummarizer", config)
+    if lcfg:
+        # Optional model download
+        if "gguf_url" in lcfg:
+            try:
+                path = fetch_llama_model(str(lcfg["gguf_url"]))
+                if path:
+                    env["LLAMA_MODEL_PATH"] = path
+            except Exception:
+                pass
+        if "model_path" in lcfg:
+            env["LLAMA_MODEL_PATH"] = str(lcfg["model_path"])
+        if "interval" in lcfg:
+            env["SUMMARY_INTERVAL"] = str(lcfg["interval"])
+        if "max_lines" in lcfg:
+            env["SUMMARY_MAX_LINES"] = str(lcfg["max_lines"])
+        if "threads" in lcfg:
+            env["LLAMA_THREADS"] = str(lcfg["threads"])
+        if "ctx" in lcfg:
+            env["LLAMA_CTX"] = str(lcfg["ctx"])
+        if "grammar_path" in lcfg:
+            env["LLAMA_GRAMMAR_PATH"] = str(lcfg["grammar_path"])
+        if "ollama_model" in lcfg:
+            env["OLLAMA_MODEL"] = str(lcfg["ollama_model"])
+        # Sampling
+        mapping = {
+            "top_k": "LLAMA_TOP_K",
+            "top_p": "LLAMA_TOP_P",
+            "min_p": "LLAMA_MIN_P",
+            "temp": "LLAMA_TEMP",
+            "repeat_penalty": "LLAMA_REPEAT_PENALTY",
+            "max_tokens": "LLAMA_MAX_TOKENS",
+        }
+        for k, ek in mapping.items():
+            if k in lcfg:
+                env[ek] = str(lcfg[k])
+    try:
+        env_path.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n")
+    except Exception:
+        pass
+
+
 def launch_asr(cfg: dict | None = None, run=subprocess.run) -> None:
     """Install systemd unit for Whisper-based transcription.
 
@@ -851,11 +1067,21 @@ def main() -> None:
     install_zeno()
     ensure_shell_env()
     ensure_service_env()
+    # Ensure persistent NVMe assets mount and write defaults
+    try:
+        ensure_assets_storage(host, cfg)
+    except Exception:
+        pass
+    # Write env for log summarizer from host config, if present
+    if "logsummarizer" in services:
+        ensure_logsummarizer_env(host, cfg)
     # Write Piper env overrides from host config, if present
     if "voice" in services:
         ensure_voice_env(host, cfg)
     if "voice" in services or "logticker" in services:
         install_voice_packages()
+    if "logsummarizer" in services:
+        install_llama_cpp()
     if "asr" in services:
         install_asr_packages()
     if "voice" in services:

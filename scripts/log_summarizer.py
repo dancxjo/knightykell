@@ -104,8 +104,10 @@ class _LlamaCppBackend(_LLMBackend):
     def __init__(self, model_path: str) -> None:
         from llama_cpp import Llama  # type: ignore
 
-        # Keep context small to reduce memory by default
-        self.llm = Llama(model_path=model_path, n_ctx=2048)
+        # Allow tuning threads/ctx via env
+        n_ctx = int(os.getenv("LLAMA_CTX", "2048"))
+        n_threads = int(os.getenv("LLAMA_THREADS", str(os.cpu_count() or 2)))
+        self.llm = Llama(model_path=model_path, n_ctx=n_ctx, n_threads=n_threads)
 
     def summarize(self, text: str) -> str:
         prompt = (
@@ -113,8 +115,38 @@ class _LlamaCppBackend(_LLMBackend):
             "Summarize the following logs in 1-2 sentences highlighting only "
             "notable events. Avoid timestamps, PIDs, and noisy details.\n\n" + text
         )
+        # Sampling parameters from env
+        def _f(name: str, default: str) -> float:
+            try:
+                return float(os.getenv(name, default))
+            except Exception:
+                return float(default)
+        def _i(name: str, default: str) -> int:
+            try:
+                return int(os.getenv(name, default))
+            except Exception:
+                return int(default)
+        params = {
+            "temperature": _f("LLAMA_TEMP", "0.2"),
+            "top_k": _i("LLAMA_TOP_K", "40"),
+            "top_p": _f("LLAMA_TOP_P", "0.95"),
+            "min_p": _f("LLAMA_MIN_P", "0.05"),
+            "repeat_penalty": _f("LLAMA_REPEAT_PENALTY", "1.1"),
+            "max_tokens": _i("LLAMA_MAX_TOKENS", "128"),
+        }
+        grammar_str = None
+        gpath = os.getenv("LLAMA_GRAMMAR_PATH")
+        if gpath and os.path.exists(gpath):
+            try:
+                with open(gpath, "r", encoding="utf-8") as fh:
+                    grammar_str = fh.read()
+            except Exception:
+                grammar_str = None
         try:
-            out = self.llm.create_completion(prompt=prompt, temperature=0.2, max_tokens=128)
+            kwargs = dict(prompt=prompt, **params)
+            if grammar_str:
+                kwargs["grammar"] = grammar_str  # type: ignore[assignment]
+            out = self.llm.create_completion(**kwargs)
             text = out.get("choices", [{}])[0].get("text", "").strip()
             return text or "No significant log events."
         except Exception as e:
@@ -257,4 +289,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
