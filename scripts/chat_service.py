@@ -138,6 +138,7 @@ class ChatNode(Node):
     def __init__(self) -> None:
         super().__init__("chat")
         self._messages: List[Message] = []
+        self._pending: List[str] = []
         prompt = os.getenv("CHAT_PROMPT")
         if prompt:
             self._messages.append({"role": "system", "content": prompt})
@@ -145,6 +146,7 @@ class ChatNode(Node):
         self._pub_voice = self.create_publisher(String, "voice", 10)
         self._pub_chat = self.create_publisher(String, "chat", 10)
         self.create_subscription(String, "asr", self._on_asr, 10)
+        self.create_subscription(String, "voice_done", self._on_voice_done, 10)
 
     def _on_asr(self, msg: String) -> None:
         text = (msg.data or "").strip()
@@ -162,13 +164,27 @@ class ChatNode(Node):
         reply = (reply or "").strip()
         if not reply:
             return
-        # Record assistant message
-        self._messages.append({"role": "assistant", "content": reply})
-        # Publish to voice and chat topics
+        # Publish to voice and chat topics, but defer logging until voice completes
         m = String()
         m.data = reply
         self._pub_voice.publish(m)
         self._pub_chat.publish(m)
+        # Track pending assistant message until announcement completes
+        self._pending.append(reply)
+
+    def _on_voice_done(self, msg: String) -> None:
+        text = (msg.data or "").strip()
+        if not text:
+            return
+        # Find matching pending reply (first occurrence)
+        try:
+            idx = self._pending.index(text)
+        except ValueError:
+            idx = -1
+        if idx != -1:
+            # Commit to conversation log in order of completion
+            self._messages.append({"role": "assistant", "content": text})
+            del self._pending[idx]
 
 
 def main() -> None:
@@ -186,4 +202,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

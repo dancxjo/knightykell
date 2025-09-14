@@ -198,7 +198,7 @@ def _select_backend() -> _LLMBackend:
 
 
 class LogSummarizer(Node):
-    """Summarize buffered log lines and publish to the ``voice`` topic.
+    """Summarize buffered log lines and publish to the ``display`` topic.
 
     Buffers messages from ``logs`` and emits summaries every
     ``SUMMARY_INTERVAL`` seconds.
@@ -213,7 +213,8 @@ class LogSummarizer(Node):
 
     def __init__(self, interval: float = 20.0, max_lines: int = 200) -> None:
         super().__init__("log_summarizer")
-        self._pub = self.create_publisher(String, "voice", 10)
+        # Publish summaries to the display for visual updates
+        self._pub = self.create_publisher(String, "display", 10)
         self._buf: list[str] = []
         self._lock = threading.Lock()
         self._backend = _select_backend()
@@ -255,7 +256,7 @@ class LogSummarizer(Node):
         return "\n".join(cleaned)
 
     def _worker(self) -> None:
-        """Periodically summarize buffered logs and publish to ``voice``."""
+        """Periodically summarize buffered logs and publish to display."""
         while rclpy.ok():
             time.sleep(self._interval)
             block = self._drain()

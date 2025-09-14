@@ -12,7 +12,7 @@ image = "ubuntu"
 model="pi5"
 services = ["voice", "logticker", "logsummarizer", "display", "asr", "chat"]
 [hosts.cerebellum.display]
-topics = ["/voice"]
+topics = ["/display", "/chat", "/asr"]
 driver = "sh1106"
 width = 128
 height = 64

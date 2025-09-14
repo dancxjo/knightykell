@@ -53,6 +53,7 @@ class VoiceNode(Node):
         self._queue: queue.Queue[str] = queue.Queue()
         # Track both piper and aplay for interruption
         self._procs: list[subprocess.Popen] = []
+        self._pub_done = self.create_publisher(String, "voice_done", 10)
         self.create_subscription(String, "voice", self.enqueue, 10)
         self.create_subscription(String, "voice_interrupt", self.interrupt, 10)
         threading.Thread(target=self._worker, daemon=True).start()
@@ -138,6 +139,13 @@ class VoiceNode(Node):
             except Exception:
                 pass
             self._procs.clear()
+            # Signal completion to upstream (e.g., chat service)
+            try:
+                done = String()
+                done.data = text
+                self._pub_done.publish(done)
+            except Exception:
+                pass
 
 
 def main() -> None:
