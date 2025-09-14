@@ -172,11 +172,12 @@ class DisplayNode(Node):
         if now - self._last_switch >= self._page_seconds:
             should_switch = True
             if cur.mode == "ticker":
-                # Only switch after content has scrolled off (looped)
-                should_switch = cur.looped
-            if should_switch:
+                # Prefer to finish a full scroll cycle, but never block forever.
+                # If not looped within 3x dwell time, switch anyway.
+                should_switch = cur.looped or (now - self._last_switch >= self._page_seconds * 3)
+            if should_switch and len(self._pages) > 1:
                 self._page_index = (self._page_index + 1) % len(self._pages)
-                # Reset next page cycle marker but not offsets (computed live)
+                # Reset next page cycle marker
                 self._pages[self._page_index].looped = False
                 self._last_switch = now
         self._render()
