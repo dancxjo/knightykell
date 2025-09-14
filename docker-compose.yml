@@ -1,0 +1,26 @@
+name: psyche
+
+services:
+  ros2:
+    container_name: ros2-dev
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2-dev
+      args:
+        ROS_DISTRO: ${ROS_DISTRO:-jazzy}
+    network_mode: host
+    environment:
+      - ROS_DISTRO=${ROS_DISTRO:-jazzy}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - ROS_LOCALHOST_ONLY=0
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - PSYCHE_SRC=/opt/psyche
+    volumes:
+      - ./:/opt/psyche
+      - ./ros2_ws:/opt/ros2_ws
+      - ./cache:/opt/psyche/cache
+    working_dir: /opt/psyche
+    entrypoint: ["/ros_entrypoint.sh"]
+    command: ["bash", "-lc", "ros2 daemon start; tail -f /dev/null"]
+    restart: unless-stopped
+

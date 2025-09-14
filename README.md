@@ -185,6 +185,33 @@ Notes:
 
 ```
 env PSYCHE_SRC=/opt/psyche python3 /opt/psyche/scripts/setup_host.py
+
+Docker Compose
+--------------
+
+Use Docker Compose for a one-command dev environment with host networking:
+
+- Bring it up (builds image if needed):
+
+```
+make compose-up
+```
+
+- Open a shell in the running container:
+
+```
+make compose-shell
+```
+
+- Tear it down:
+
+```
+make compose-down
+```
+
+Notes:
+- Compose uses `network_mode: host` so DDS multicast discovery works on Linux. On Docker Desktop (Mac/Windows), host networking is limited; consider WSL2 or a Linux host for LAN ROS graphs.
+- Set `ROS_DOMAIN_ID` when needed: `ROS_DOMAIN_ID=25 make compose-up` to match a non-default domain.
 ```
 
 Autoinstall (forebrain)

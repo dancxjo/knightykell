@@ -1,4 +1,4 @@
-.PHONY: image ubuntu-images test provision deprovision reconcile ros2-dev-image ros2-dev-run
+.PHONY: image ubuntu-images test provision deprovision reconcile ros2-dev-image ros2-dev-run compose-up compose-down compose-shell
 
 # Build Raspberry Pi images for hosts defined in hosts.toml.
 # Usage: make image HOSTS="brainstem forebrain" (default builds all)
@@ -40,3 +40,13 @@ ros2-dev-run:
 	  -e PSYCHE_SRC=/opt/psyche \
 	  -w /opt/psyche \
 	  psyche/ros2-dev:jazzy bash
+
+# Docker Compose helpers
+compose-up:
+	@docker compose up -d --build ros2
+
+compose-down:
+	@docker compose down
+
+compose-shell:
+	@docker compose exec ros2 bash
