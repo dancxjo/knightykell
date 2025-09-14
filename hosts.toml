@@ -10,7 +10,7 @@ echo_pin = 27
 [hosts.cerebellum]
 image = "ubuntu"
 model="pi5"
-services = ["voice", "logticker", "display", "topics", "notify", "fortune", "asr", "create", "singer"]
+services = ["voice", "logticker", "display", "topics", "notify", "fortune", "vision", "asr", "create", "singer"]
 [hosts.cerebellum.display]
 topics = ["/logs", "/topics", "/status/notify"]
 driver = "sh1106"
@@ -58,3 +58,8 @@ gguf_url = "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/
 
 [hosts.latimer]
 services = []
+[hosts.cerebellum.vision]
+device = 0
+width = 640
+height = 480
+fps = 5

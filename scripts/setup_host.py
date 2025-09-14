@@ -169,6 +169,7 @@ def stage_runtime_assets() -> None:
         "create_singer.py",
         "notify_to_voice.py",
         "fortune_notify.py",
+        "vision_service.py",
         "oled_splash.py",
         "oled_clear.py",
         "fetch_models.py",
@@ -963,6 +964,18 @@ def install_zeno(run=subprocess.run) -> None:
         _venv_pip_install(["--pre", "zenoh"], run)
 
 
+def install_vision_packages(run=subprocess.run) -> None:
+    """Install OpenCV and NumPy into the service virtualenv.
+
+    Examples:
+        >>> install_vision_packages(lambda cmd, check: None)  # doctest: +SKIP
+    """
+    try:
+        _venv_pip_install(["numpy", "opencv-python-headless"], run)
+    except Exception:
+        pass
+
+
 def install_voice_packages(run=subprocess.run) -> None:
     """Install Piper TTS and a default voice model.
 
@@ -1463,6 +1476,28 @@ def launch_create(cfg: dict | None = None, run=subprocess.run) -> None:
     install_service_unit("create", cmd, run)
 
 
+def launch_vision(cfg: dict | None = None, run=subprocess.run) -> None:
+    """Install systemd unit for the USB webcam vision service.
+
+    Examples:
+        >>> launch_vision({'device': 0, 'width': 640, 'height': 480, 'fps': 5}, lambda cmd, check: None)  # doctest: +SKIP
+    """
+    cfg = cfg or {}
+    dev = str(cfg.get("device", 0))
+    width = str(cfg.get("width", 640))
+    height = str(cfg.get("height", 480))
+    fps = str(cfg.get("fps", 5))
+    cmd = [
+        str(VENV_DIR / "bin/python"),
+        script_path("vision_service.py"),
+        "--device", dev,
+        "--width", width,
+        "--height", height,
+        "--fps", fps,
+    ]
+    install_service_unit("vision", cmd, run)
+
+
 def launch_chat(run=subprocess.run) -> None:
     """Install systemd unit for the chat service.
 
@@ -1623,6 +1658,9 @@ def main() -> None:
     if "asr" in services:
         print("[setup] installing ASR packages…")
         install_asr_packages()
+    if "vision" in services:
+        print("[setup] installing vision packages…")
+        install_vision_packages()
     if "voice" in services:
         print("[setup] configuring audio…")
         ensure_audio(get_audio_config(host, cfg))
@@ -1672,6 +1710,10 @@ def main() -> None:
             print("[setup] launching ASR (utterance) service…")
             launch_asr_long(scfg)
             installed.append("asr_long")
+        elif svc == "vision":
+            print("[setup] launching vision service…")
+            launch_vision(scfg)
+            installed.append("vision")
         elif svc == "singer":
             print("[setup] launching Create singer service…")
             sc = dict(scfg or {})

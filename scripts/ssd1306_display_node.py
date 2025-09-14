@@ -142,7 +142,7 @@ class DisplayNode(Node):
         content_h = max(1, h - title_h - (status_h + 2))
         max_lines = max(1, content_h // body_line_h)
         if cur.mode == "ticker":
-            wrapped = self._wrap_text_with_font(draw, cur.text or "", w - 4, self._font_body)
+            wrapped = self._wrap_text_with_font(draw, (cur.text or "")+"\n\n\n\n\n", w - 4, self._font_body)
             if len(wrapped) > max_lines:
                 cur.vpix += 1
                 if cur.vpix >= body_line_h:
