@@ -802,6 +802,17 @@ def provision_base(hostname: str, config: dict, services: list[str], *, image: b
             install_llama_cpp(run)
         if "asr" in services:
             install_asr_packages(run)
+    # Ensure /etc/psyche.env exists and reflect any voice overrides in it
+    env_path = pathlib.Path("/etc/psyche.env")
+    env: dict[str, str] = {}
+    try:
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k] = v
+    except Exception:
+        pass
     vcfg = get_service_config(hostname, "voice", config)
     if vcfg:
         if "model" in vcfg:
@@ -1649,15 +1660,25 @@ def install_pi_hw_packages(run=subprocess.run) -> None:
         pass
     # Always ensure Python deps are installed regardless of apt success.
     # Prefer system Pillow via python3-pil to avoid problematic wheels on aarch64.
-    # Install luma.oled without pulling dependencies (so it doesn't try to fetch Pillow).
+    # Install luma.oled and its sibling luma.core without pulling dependencies
+    # (so it doesn't try to fetch Pillow). Pillow is provided by python3-pil above.
     try:
         pip = str(VENV_DIR / "bin/pip")
         run([pip, "install", "--no-deps", "luma.oled"], check=True)
+        run([pip, "install", "--no-deps", "luma.core"], check=True)
         run([pip, "install", "smbus2"], check=False)
     except Exception:
         # As a fallback, try a conservative Pillow pin if imports still fail
         try:
-            _venv_pip_install(["Pillow<=10.3.0", "luma.oled", "smbus2"], run)
+            _venv_pip_install(["Pillow<=10.3.0", "luma.oled", "luma.core", "smbus2"], run)
+        except Exception:
+            pass
+    # Verify imports; if still missing, attempt one more pip-based fallback including Pillow
+    try:
+        verify_venv_imports(["luma.oled", "luma.core", "PIL"], run)
+    except Exception:
+        try:
+            _venv_pip_install(["Pillow<=10.3.0", "luma.oled", "luma.core", "smbus2"], run)
         except Exception:
             pass
     # Best-effort: enable I2C at boot on Raspberry Pi and load module now
