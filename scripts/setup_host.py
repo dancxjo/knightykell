@@ -1199,7 +1199,61 @@ def install_ros2(run=subprocess.run) -> None:
         )
     run(["apt-get", "update"], check=True)
     # Install ROS base first (separate call to match tests). Default jazzy.
-    run(["apt-get", "install", "-y", f"ros-{ROS_DISTRO}-ros-base"], check=True)
+    try:
+        run(["apt-get", "install", "-y", f"ros-{ROS_DISTRO}-ros-base"], check=True)
+    except Exception:
+        # On Pop!_OS (plucky), ROS Jazzy (noble) may require Ubuntu 24.04 runtime
+        # libraries (e.g., libpython3.12t64, libspdlog1.12-fmt9). Add Ubuntu Noble
+        # apt sources and tightly pin only the required packages, then retry.
+        try:
+            noble_list = "/etc/apt/sources.list.d/ubuntu-noble.list"
+            noble_pref = "/etc/apt/preferences.d/noble-ros.pref"
+            run(
+                [
+                    "bash",
+                    "-lc",
+                    (
+                        "cat > "
+                        + noble_list
+                        + " <<'EOF'\n"
+                        + "deb http://archive.ubuntu.com/ubuntu noble main universe\n"
+                        + "deb http://archive.ubuntu.com/ubuntu noble-updates main universe\n"
+                        + "deb http://security.ubuntu.com/ubuntu noble-security main universe\n"
+                        + "EOF\n"
+                    ),
+                ],
+                check=True,
+            )
+            # Pin only the specific packages we need from noble with high priority
+            run(
+                [
+                    "bash",
+                    "-lc",
+                    (
+                        "cat > "
+                        + noble_pref
+                        + " <<'EOF'\n"
+                        + "Package: libpython3.12t64\n"
+                        + "Pin: release n=noble\n"
+                        + "Pin-Priority: 1001\n\n"
+                        + "Package: libspdlog1.12-fmt9\n"
+                        + "Pin: release n=noble\n"
+                        + "Pin-Priority: 1001\n\n"
+                        + "Package: libfmt9\n"
+                        + "Pin: release n=noble\n"
+                        + "Pin-Priority: 1001\n"
+                        + "EOF\n"
+                    ),
+                ],
+                check=True,
+            )
+            run(["apt-get", "update"], check=True)
+            run(["apt-get", "install", "-y", "libpython3.12t64", "libspdlog1.12-fmt9"], check=True)
+            # Retry ROS base install
+            run(["apt-get", "install", "-y", f"ros-{ROS_DISTRO}-ros-base"], check=True)
+        except Exception:
+            # Give a clear failure; caller will see apt errors above.
+            raise
     # Optionally install CycloneDDS RMW for better performance
     try:
         run(["apt-get", "install", "-y", f"ros-{ROS_DISTRO}-rmw-cyclonedds-cpp"], check=True)
