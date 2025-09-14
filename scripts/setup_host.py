@@ -830,6 +830,11 @@ def launch_display(cfg: dict, run=subprocess.run) -> None:
         "--i2c-address", address,
         "--page-seconds", page_seconds,
         "--tick-interval", tick_interval,
+    ]
+    extra = str(cfg.get("extra", ""))
+    if extra:
+        cmd += ["--extra", extra]
+    cmd += [
         *topics,
     ]
     # Ensure I2C character device is available before starting the display
@@ -1353,6 +1358,19 @@ def launch_logticker(run=subprocess.run) -> None:
     install_service_unit("logticker", cmd, run)
 
 
+def launch_topics(run=subprocess.run) -> None:
+    """Install systemd unit for a topic list publisher.
+
+    Publishes a single-line summary of currently visible topics to
+    the ``/topics`` topic. Handy for OLED ticker displays.
+
+    Examples:
+        >>> launch_topics(lambda cmd, check: None)  # doctest: +SKIP
+    """
+    cmd = [str(VENV_DIR / "bin/python"), script_path("topic_list_service.py")]
+    install_service_unit("topics", cmd, run)
+
+
         
 
 
@@ -1570,6 +1588,10 @@ def main() -> None:
             print("[setup] launching logticker service…")
             launch_logticker()
             installed.append("logticker")
+        elif svc == "topics":
+            print("[setup] launching topics service…")
+            launch_topics()
+            installed.append("topics")
         elif svc == "chat":
             print("[setup] launching chat service…")
             launch_chat()

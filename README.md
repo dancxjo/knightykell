@@ -71,12 +71,12 @@ Configuration
 ```
 [hosts]
 [hosts.brainstem]
-services = ["voice", "logticker", "hrs04", "display", "asr"]
+services = ["voice", "logticker", "hrs04", "display", "topics", "asr"]
 [hosts.brainstem.hrs04]
 trig_pin = 17
 echo_pin = 27
 [hosts.brainstem.display]
-topics = ["/sensor/range"]
+topics = ["/sensor/range", "/topics"]
 [hosts.brainstem.voice]
 # Optional: override Piper model and voices dir
 model = "en_US-lessac-high"
@@ -100,6 +100,7 @@ Services
 
 - `psyche-voice.service`: Queue text‑to‑speech from the `voice` topic
 - `psyche-logticker.service`: Publish journal lines to the `logs` topic
+- `psyche-topics.service`: Publish a summary list on the `topics` topic
 - `psyche-chat.service`: Maintain a chat conversation; reacts to `asr` and publishes replies to `voice`
 - `psyche-asr.service`: Publish Whisper transcripts on the `asr` topic
 - `psyche-hrs04.service`: Ultrasonic sensor node (pins from host config)
@@ -119,7 +120,9 @@ If you seed assets during image build (via `ASSETS_SEED_DIR`), they are copied i
 Logs on Display
 ---------------
 
-The log ticker publishes raw journal lines on the `logs` topic. Configure the display service to subscribe to `/logs` to show logs. The LLM is dedicated to chat.
+The log ticker publishes raw journal lines on the `logs` topic. Configure the display service to subscribe to `/logs` to show logs.
+
+To show active topics, enable the `topics` service and add `/topics` to the display topics. The topics publisher emits a single-line summary suitable for the OLED ticker.
 
 Notes
 -----

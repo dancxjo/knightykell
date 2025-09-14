@@ -10,9 +10,9 @@ echo_pin = 27
 [hosts.cerebellum]
 image = "ubuntu"
 model="pi5"
-services = ["voice", "logticker", "display", "asr", "create"]
+services = ["voice", "logticker", "display", "topics", "asr", "create"]
 [hosts.cerebellum.display]
-topics = ["/asr", "/logs", "/vad"]
+topics = ["/asr", "/logs", "/topics"]
 driver = "sh1106"
 width = 128
 height = 64

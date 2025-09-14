@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Dict, List
 from collections import deque
 import os
+import socket
 
 import rclpy
 from rclpy.node import Node
@@ -45,7 +46,8 @@ class DisplayNode(Node):
 
     def __init__(self, topics: list[str], *, driver: str, width: int | None,
                  height: int | None, port: int, address: int,
-                 page_seconds: float = 6.0, tick_interval: float = 0.10) -> None:
+                 page_seconds: float = 6.0, tick_interval: float = 0.10,
+                 extra: str = "") -> None:
         super().__init__("display")
         if not HAS_LUMA:
             raise RuntimeError("luma.oled not available; install it first")
@@ -83,6 +85,12 @@ class DisplayNode(Node):
         self._last_switch = time.monotonic()
         self._page_seconds = float(page_seconds)
         self._tick_interval = float(tick_interval)
+        # Bottom status/extra lines (ticker-style)
+        self._extra_text = str(extra or "")
+        self._status_off = 0
+        self._extra_off = 0
+        self._last_ip = None
+        self._last_ip_ts = 0.0
         qos = QoSProfile(depth=10)
         for t in self._topics:
             self.create_subscription(String, t, self._make_cb(t), qos)
@@ -115,6 +123,20 @@ class DisplayNode(Node):
             cur.offset = (cur.offset + 2) % (tw + 10)
         else:
             cur.offset = 0
+        # Bottom status ticker offsets
+        draw = ImageDraw.Draw(Image.new("1", self._device.size))
+        status = self._status_text()
+        stw = int(self._font.getlength(status)) if hasattr(self._font, "getlength") else draw.textlength(status, font=self._font)
+        if stw > w:
+            self._status_off = (self._status_off + 2) % (stw + 20)
+        else:
+            self._status_off = 0
+        if self._extra_text:
+            etw = int(self._font.getlength(self._extra_text)) if hasattr(self._font, "getlength") else draw.textlength(self._extra_text, font=self._font)
+            if etw > w:
+                self._extra_off = (self._extra_off + 2) % (etw + 20)
+            else:
+                self._extra_off = 0
         if now - self._last_switch >= self._page_seconds:
             self._page_index = (self._page_index + 1) % len(self._pages)
             self._last_switch = now
@@ -143,10 +165,36 @@ class DisplayNode(Node):
             tw = len(title) * 6
         tx = max(0, min(2, (w - tw) // 2))
         draw.text((tx, 2), title, font=self._font, fill=0)
+        # Bottom info area: two lines (status + extra)
+        line_h = max(8, self._font.getsize("A")[1]) if hasattr(self._font, "getsize") else 12
+        bottom_h = line_h * 2 + 2
+        y_bottom_status = h - bottom_h
+        y_bottom_extra = y_bottom_status + line_h
+        # Separator line above bottom area
+        draw.line((0, y_bottom_status - 2, w, y_bottom_status - 2), fill=255)
+        # Status ticker
+        status = self._status_text()
+        stw = int(self._font.getlength(status)) if hasattr(self._font, "getlength") else draw.textlength(status, font=self._font)
+        off = self._status_off
+        if stw <= w:
+            draw.text((2, y_bottom_status), status, font=self._font, fill=255)
+        else:
+            draw.text((2 - off, y_bottom_status), status, font=self._font, fill=255)
+            draw.text((2 - off + stw + 40, y_bottom_status), status, font=self._font, fill=255)
+        # Extra ticker (optional)
+        extra = self._extra_text
+        if extra:
+            etw = int(self._font.getlength(extra)) if hasattr(self._font, "getlength") else draw.textlength(extra, font=self._font)
+            eoff = self._extra_off
+            if etw <= w:
+                draw.text((2, y_bottom_extra), extra, font=self._font, fill=255)
+            else:
+                draw.text((2 - eoff, y_bottom_extra), extra, font=self._font, fill=255)
+                draw.text((2 - eoff + etw + 40, y_bottom_extra), extra, font=self._font, fill=255)
         if page.mode == "terminal" and page.lines is not None:
             # Render a terminal-like scrolling log under the title bar
             y0 = 16
-            avail_h = h - y0
+            avail_h = (y_bottom_status - 3) - y0
             line_h = max(8, self._font.getsize("A")[1]) if hasattr(self._font, "getsize") else 12
             max_lines = max(1, avail_h // line_h)
             # Wrap recent lines to fit width
@@ -174,6 +222,45 @@ class DisplayNode(Node):
                     draw.text((2 - off, y), text, font=self._font, fill=255)
                     draw.text((2 - off + tw + 20, y), text, font=self._font, fill=255)
         self._device.display(img)
+
+    def _status_text(self) -> str:
+        """Return short clock, date, IP, and hostname as a line.
+
+        Format: ``HH:MM  YYYY-­MM-­DD  192.168.x.x  host``
+        """
+        # Time and date
+        t = time.strftime("%H:%M")
+        d = time.strftime("%Y-%m-%d")
+        host = self._safe_hostname()
+        ip = self._primary_ip()
+        return f"{t}  {d}  {ip}  {host}"
+
+    def _safe_hostname(self) -> str:
+        try:
+            return socket.gethostname()
+        except Exception:
+            return "(host)"
+
+    def _primary_ip(self) -> str:
+        # Refresh IP at most every 5 seconds
+        now = time.monotonic()
+        if self._last_ip and now - self._last_ip_ts < 5.0:
+            return self._last_ip
+        ip = "0.0.0.0"
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(0.1)
+            s.connect(("1.1.1.1", 80))
+            ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            try:
+                ip = socket.gethostbyname(socket.gethostname())
+            except Exception:
+                pass
+        self._last_ip = ip
+        self._last_ip_ts = now
+        return ip
 
     def _wrap_text(self, draw: "ImageDraw", text: str, max_w: int) -> List[str]:
         # Simple word-wrapping by pixel width
@@ -208,6 +295,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--i2c-address", type=lambda x: int(x, 0), default=0x3C)
     parser.add_argument("--page-seconds", type=float, default=6.0)
     parser.add_argument("--tick-interval", type=float, default=0.10)
+    parser.add_argument("--extra", default="", help="extra bottom-line text")
     ns = parser.parse_args(argv)
     rclpy.init()
     node = DisplayNode(
@@ -219,6 +307,7 @@ def main(argv: list[str] | None = None) -> None:
         address=ns.i2c_address,
         page_seconds=ns.page_seconds,
         tick_interval=ns.tick_interval,
+        extra=ns.extra,
     )
     try:
         rclpy.spin(node)
