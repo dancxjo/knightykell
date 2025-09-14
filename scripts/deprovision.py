@@ -24,8 +24,8 @@ import subprocess
 import sys
 from typing import Iterable
 
-SERVICE_USER = os.getenv("PSYCHE_USER", "pete")
-HOME_DIR = pathlib.Path(f"/home/{SERVICE_USER}")
+SERVICE_USER = os.getenv("PSYCHE_USER", "root")
+HOME_DIR = pathlib.Path(f"/home/{SERVICE_USER}") if SERVICE_USER != "root" else pathlib.Path("/root")
 SYSTEMD_DIR = pathlib.Path("/etc/systemd/system")
 
 
@@ -102,7 +102,7 @@ def remove_user_files(remove_user: bool = False) -> None:
                 run(["rm", "-rf", str(d)])
         except Exception:
             pass
-    if remove_user:
+    if remove_user and SERVICE_USER != "root":
         # Try to delete the service user and home directory
         try:
             run(["userdel", "-r", SERVICE_USER], check=False)

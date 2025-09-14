@@ -2,10 +2,10 @@
 """Keep the PSYCHE repo evergreen and re‑provision if updated.
 
 Behavior:
-- If ``/home/pete/psyche`` is a Git repo, ``git fetch`` and fast‑forward to
+- If ``/opt/psyche`` is a Git repo, ``git fetch`` and fast‑forward to
   ``origin/$PSYCHE_BRANCH`` (default ``main``).
 - Else, download the GitHub zip for ``$GITHUB_OWNER/$GITHUB_REPO@$GITHUB_BRANCH``
-  (defaults: dancxjo/knightykell@main), extract, and replace ``/home/pete/psyche``.
+  (defaults: dancxjo/knightykell@main), extract, and replace ``/opt/psyche``.
 - On change, run ``psyche-provision`` (or fall back to setup_host.py).
 
 Environment:
@@ -15,7 +15,7 @@ Environment:
 - ``GITHUB_BRANCH`` (default: ``main``)
 
 Examples:
-    Run once (service user)::
+    Run once (service context)::
 
         $ python3 git_updater.py  # doctest: +SKIP
 """
@@ -30,9 +30,8 @@ import tempfile
 import urllib.request
 import zipfile
 
-SERVICE_USER = "pete"
-HOME_DIR = pathlib.Path(f"/home/{SERVICE_USER}")
-REPO_DIR = HOME_DIR / "psyche"
+SERVICE_USER = os.getenv("PSYCHE_USER", "root")
+REPO_DIR = pathlib.Path("/opt/psyche")
 
 
 def _run(cmd: list[str], check: bool = True, cwd: str | None = None) -> subprocess.CompletedProcess:
@@ -122,4 +121,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

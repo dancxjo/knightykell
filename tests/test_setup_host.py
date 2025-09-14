@@ -133,14 +133,18 @@ def test_install_voice_packages_installs_piper():
 def test_ensure_service_user_adds_user(monkeypatch):
     calls = []
 
+    # Simulate a non-root configured service user that does not exist yet
+    monkeypatch.setattr("scripts.setup_host.SERVICE_USER", "svcuser")
+
     def fake_run(cmd, check=False):
         calls.append(cmd)
         class R:
-            returncode = 1
+            # Return non-zero for `id svcuser` to trigger creation
+            returncode = 1 if cmd[:2] == ["id", "svcuser"] else 0
         return R()
 
     ensure_service_user(fake_run)
-    assert ["useradd", "--create-home", "pete"] in calls
+    assert ["useradd", "--create-home", "svcuser"] in calls
 
 
 def test_clone_repo_runs_git_clone(monkeypatch, tmp_path):

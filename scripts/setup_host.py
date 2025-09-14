@@ -19,8 +19,10 @@ import re
 
 CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent / "hosts.toml"
 SSH_DIR = pathlib.Path("/etc/psyche-ssh")
-SERVICE_USER = "pete"
-HOME_DIR = pathlib.Path(f"/home/{SERVICE_USER}")
+# Default to running services as root to avoid sudo prompts/passwords.
+# Can be overridden via PSYCHE_USER environment variable at runtime if needed.
+SERVICE_USER = os.getenv("PSYCHE_USER", "root")
+HOME_DIR = pathlib.Path(f"/home/{SERVICE_USER}") if SERVICE_USER != "root" else pathlib.Path("/root")
 REPO_URL = "https://example.com/psyche.git"
 # Place workspace and repo under /opt for easier admin access
 REPO_DIR = pathlib.Path("/opt/psyche")
@@ -169,6 +171,7 @@ def stage_runtime_assets() -> None:
         "retry_exec.py",
         "create_singer.py",
         "create_health.py",
+        "first_boot_sanity.py",
         "notify_to_voice.py",
         "fortune_notify.py",
         "vision_service.py",
@@ -251,7 +254,7 @@ def ensure_ssh_keys() -> None:
 
 
 def ensure_service_user(run=subprocess.run) -> None:
-    """Create the ``pete`` service user if missing.
+    """Ensure the configured service user exists when not root.
 
     Examples:
         >>> calls = []
@@ -263,8 +266,9 @@ def ensure_service_user(run=subprocess.run) -> None:
         >>> calls[1][:2]
         ['useradd', '--create-home']
     """
+    # If running as root user for services, nothing to create.
     proc = run(["id", SERVICE_USER], check=False)
-    if getattr(proc, "returncode", 1) != 0:
+    if getattr(proc, "returncode", 1) != 0 and SERVICE_USER != "root":
         run(["useradd", "--create-home", SERVICE_USER], check=True)
 
 
@@ -408,10 +412,10 @@ def setup_workspace(run=subprocess.run) -> None:
         run(["bash", "-lc", "command -v rosdep >/dev/null 2>&1 && rosdep fix-permissions || true"], check=False)
     except Exception:
         pass
+    # Run rosdep as root so apt installs do not prompt for a password
     try:
         run(
             [
-                "sudo", "-u", SERVICE_USER,
                 "bash",
                 "-lc",
                 f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && command -v rosdep >/dev/null 2>&1 && rosdep update && rosdep install --from-paths src --ignore-src -r -y || true",
@@ -420,17 +424,28 @@ def setup_workspace(run=subprocess.run) -> None:
         )
     except Exception:
         pass
-    run(
-        [
-            "sudo",
-            "-u",
-            SERVICE_USER,
-            "bash",
-            "-lc",
-            f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
-        ],
-        check=True,
-    )
+    # Build workspace (ok as root by default; supports non-root SERVICE_USER if set)
+    if SERVICE_USER == "root":
+        run(
+            [
+                "bash",
+                "-lc",
+                f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
+            ],
+            check=True,
+        )
+    else:
+        run(
+            [
+                "sudo",
+                "-u",
+                SERVICE_USER,
+                "bash",
+                "-lc",
+                f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
+            ],
+            check=True,
+        )
 
 
 def install_service_unit(name: str, cmd: list[str], run=subprocess.run, pre: list[str] | None = None) -> None:
@@ -449,7 +464,7 @@ def install_service_unit(name: str, cmd: list[str], run=subprocess.run, pre: lis
     wrapped = (
         f"/bin/bash -lc '"
         f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1; "
-        f"[ -f {HOME_DIR}/ros2_ws/install/setup.bash ] && source {HOME_DIR}/ros2_ws/install/setup.bash >/dev/null 2>&1 || true; "
+        f"[ -f {WORKSPACE}/install/setup.bash ] && source {WORKSPACE}/install/setup.bash >/dev/null 2>&1 || true; "
         f"{' '.join(cmd)}'"
     )
     # Render optional ExecStartPre lines
@@ -640,7 +655,7 @@ def provision_base(hostname: str, config: dict, services: list[str], *, image: b
     first-boot work. On-host, main() retains package installs to satisfy tests.
 
     Steps (best-effort where reasonable):
-    - Create service user ``pete``
+    - Ensure service user (default root)
     - Install ROS 2 base and optional CycloneDDS
     - Stage runtime assets and SSH keys
     - Ensure Python venv and install zenoh
@@ -835,17 +850,22 @@ def ensure_ros2_extra_repos(hostname: str, config: dict, run=subprocess.run) -> 
         pass
     try:
         run([
-            "sudo", "-u", SERVICE_USER,
             "bash", "-lc",
             f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && command -v rosdep >/dev/null 2>&1 && rosdep update && rosdep install --from-paths src --ignore-src -r -y || true",
         ], check=False)
     except Exception:
         pass
     try:
-        run([
-            "sudo", "-u", SERVICE_USER, "bash", "-lc",
-            f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
-        ], check=False)
+        if SERVICE_USER == "root":
+            run([
+                "bash", "-lc",
+                f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
+            ], check=False)
+        else:
+            run([
+                "sudo", "-u", SERVICE_USER, "bash", "-lc",
+                f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
+            ], check=False)
     except Exception:
         pass
 
@@ -890,7 +910,8 @@ def ensure_audio(cfg: dict | None = None, run=subprocess.run) -> None:
         pass
     try:
         run(["apt-get", "install", "-y", "alsa-utils"], check=True)
-        run(["usermod", "-aG", "audio", SERVICE_USER], check=True)
+        if SERVICE_USER != "root":
+            run(["usermod", "-aG", "audio", SERVICE_USER], check=True)
     except Exception:
         return
 
@@ -1717,7 +1738,7 @@ def launch_updater(run=subprocess.run) -> None:
     wrapped = (
         f"/bin/bash -lc '"
         f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1; "
-        f"[ -f {HOME_DIR}/ros2_ws/install/setup.bash ] && source {HOME_DIR}/ros2_ws/install/setup.bash >/dev/null 2>&1 || true; "
+        f"[ -f {WORKSPACE}/install/setup.bash ] && source {WORKSPACE}/install/setup.bash >/dev/null 2>&1 || true; "
         f"{VENV_DIR}/bin/python {script_path('git_updater.py')}'"
     )
     svc = f"""[Unit]
@@ -1729,7 +1750,7 @@ Wants=network-online.target
 Type=oneshot
 User={SERVICE_USER}
 EnvironmentFile=-/etc/psyche.env
-WorkingDirectory={HOME_DIR}
+WorkingDirectory={REPO_DIR}
 ExecStart={wrapped}
 StandardOutput=journal
 StandardError=journal
@@ -2181,7 +2202,7 @@ def main() -> None:
         print("[setup] installing Pi hardware packages…")
         install_pi_hw_packages()
     # Ensure serial access for Create, if present
-    if "create" in services:
+    if "create" in services and SERVICE_USER != "root":
         try:
             subprocess.run(["usermod", "-aG", "dialout", SERVICE_USER], check=True)
         except Exception:

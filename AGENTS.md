@@ -5,7 +5,7 @@
 - Keep tests isolated; patch external commands.
 - Use concise commit messages.
 - Avoid `ls -R`; use `rg` or targeted `ls` instead to navigate.
-- Create service user `pete` and a ROS2 workspace during host provisioning.
+- Run services as `root` (no separate service user) and create a ROS2 workspace during host provisioning.
 - Generate systemd units so ROS2 services launch at boot.
 - Use `make image HOSTS="<names>"` to build Raspberry Pi images for hosts.
 - Mark Raspberry Pi hosts with `image = "rpi"` in `hosts.toml`; hosts without it won't get images but still provision at boot.

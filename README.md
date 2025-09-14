@@ -25,7 +25,31 @@ What it does:
 
 - Downloads the repo as a zip and extracts to a temp dir
 - Runs `scripts/setup_host.py` with `PSYCHE_SRC` pointing at the extracted source
-- Installs ROS 2 Jazzy and colcon, creates service user `pete`, builds the workspace, installs required packages, and enables services
+- Installs ROS 2 Jazzy and colcon, builds the workspace, installs required packages, and enables services (runs services as root)
+
+After install: sanity check
+--------------------------
+
+- Open a new login shell (so `/etc/profile.d/psyche-ros2.sh` is sourced), or run:
+
+```
+exec bash -l
+```
+
+- Verify environment:
+
+```
+echo $RMW_IMPLEMENTATION    # should be rmw_cyclonedds_cpp
+echo $AMENT_PREFIX_PATH     # should include /opt/ros2_ws/install
+```
+
+- Run the quick sanity script (publishes to `/status/notify` for the OLED):
+
+```
+sudo bash -lc 'source /opt/ros/jazzy/setup.bash; source /opt/ros2_ws/install/setup.bash; python3 /opt/psyche/scripts/first_boot_sanity.py'
+```
+
+- You should see a line like `sanity: services ok 7/7 | miss:...` and the same on the OLED.
 
 Verify services:
 
@@ -58,7 +82,7 @@ sudo -E env PSYCHE_SRC=$(pwd) python3 scripts/setup_host.py
 - Or use the helper installed by provisioning:
 
 ```
-psyche-provision     # uses $PSYCHE_SRC or /home/pete/psyche if present
+psyche-provision     # uses $PSYCHE_SRC or /opt/psyche if present
 ```
 
 Both approaches are idempotent — units are reloaded, services restart, the workspace rebuilds, and runtime assets refresh.
@@ -89,7 +113,7 @@ What provisioning installs
 --------------------------
 
 - ROS 2 Jazzy (adds apt repo/key if missing), `python3-colcon-common-extensions`
-- Service user `pete`, workspace at `/home/pete/ros2_ws` (built with `colcon`)
+- Services run as root; workspace at `/opt/ros2_ws` (built with `colcon`)
 - Zenoh via pip
 - Voice dependencies: `piper` plus default voice (Lessac, high). Models are downloaded to `/opt/piper/voices`.
 - ASR dependencies: `openai-whisper`, `webrtcvad`, `sounddevice` (plus `ffmpeg`)
