@@ -646,6 +646,8 @@ def launch_display(cfg: dict, run=subprocess.run) -> None:
     height = str(cfg.get("height", 64))
     port = str(cfg.get("port", 1))
     address = str(cfg.get("address", "0x3C"))
+    page_seconds = str(cfg.get("page_seconds", 6.0))
+    tick_interval = str(cfg.get("tick_interval", 0.10))
     cmd = [
         str(VENV_DIR / "bin/python"),
         script_path("ssd1306_display_node.py"),
@@ -654,6 +656,8 @@ def launch_display(cfg: dict, run=subprocess.run) -> None:
         "--height", height,
         "--i2c-port", port,
         "--i2c-address", address,
+        "--page-seconds", page_seconds,
+        "--tick-interval", tick_interval,
         *topics,
     ]
     # Ensure I2C character device is available before starting the display
