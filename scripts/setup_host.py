@@ -1441,6 +1441,9 @@ def install_vision_models(run=subprocess.run) -> None:
     Downloads:
     - LBF landmark model (68-point): lbfmodel.yaml
     - SFace face recognition embedding model: face_recognition_sface_2021dec.onnx
+
+    Examples:
+        >>> install_vision_models(lambda cmd, check: None)  # doctest: +SKIP
     """
     base = pathlib.Path(os.getenv("VISION_MODELS_DIR") or _read_env_file_var("VISION_MODELS_DIR", "/opt/psyche/models/vision") or "/opt/psyche/models/vision")
     try:
@@ -1452,7 +1455,9 @@ def install_vision_models(run=subprocess.run) -> None:
     if not lbf.exists():
         run([
             "curl", "-fsSL", "-o", str(lbf),
-            "https://raw.githubusercontent.com/opencv/opencv_contrib/4.x/modules/face/data/lbfmodel.yaml",
+            # Source of the 68-point LBF landmark model used by OpenCV's face module
+            # The previous opencv_contrib 4.x URL returned 404; use the canonical GSOC2017 location
+            "https://raw.githubusercontent.com/kurnianggoro/GSOC2017/master/data/lbfmodel.yaml",
         ], check=True)
     if not sface.exists():
         run([
