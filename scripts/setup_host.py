@@ -650,14 +650,27 @@ def ensure_service_env() -> None:
     Creates ``/etc/psyche.env`` with a minimal environment ensuring the venv
     and ROS tools are on PATH for all units.
     """
+    cuda_bin = "/usr/local/cuda/bin"
+    cuda_lib = "/usr/local/cuda/lib64"
+    path_val = f"{VENV_DIR}/bin:/opt/ros/{ROS_DISTRO}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/usr/games:/usr/local/games"
+    try:
+        if pathlib.Path(cuda_bin).exists():
+            path_val = path_val + f":{cuda_bin}"
+    except Exception:
+        pass
     lines = [
-        f"PATH={VENV_DIR}/bin:/opt/ros/{ROS_DISTRO}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/usr/games:/usr/local/games",
+        f"PATH={path_val}",
         "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp",
         # Force gpiozero to use modern lgpio backend (works on Pi 5)
         "GPIOZERO_PIN_FACTORY=lgpio",
         # Centralize cache path for headless operation
         "XDG_CACHE_HOME=/opt/psyche/cache",
     ]
+    try:
+        if pathlib.Path(cuda_lib).exists():
+            lines.append(f"LD_LIBRARY_PATH={cuda_lib}:${{LD_LIBRARY_PATH:-}}")
+    except Exception:
+        pass
     try:
         pathlib.Path("/etc/psyche.env").write_text("\n".join(lines) + "\n")
     except PermissionError:
