@@ -20,7 +20,8 @@ from collections import deque
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
+from std_msgs.msg import Int16MultiArray
 import sounddevice as sd
 import webrtcvad
 import whisper
@@ -46,6 +47,9 @@ class AsrNode(Node):
     def __init__(self, model: str = "tiny") -> None:
         super().__init__("asr")
         self._pub = self.create_publisher(String, "asr", 10)
+        self._pub_vad = self.create_publisher(Bool, "vad", 10)
+        self._pub_frames = self.create_publisher(Int16MultiArray, "audio/frames", 10)
+        self._pub_utter = self.create_publisher(Int16MultiArray, "audio/utterance", 10)
         self._model = whisper.load_model(model)
         self._vad = webrtcvad.Vad(2)
         self._frames: deque[bytes] = deque()
@@ -68,13 +72,35 @@ class AsrNode(Node):
         """Collect voiced frames based on VAD."""
         if status:
             self.get_logger().warning(str(status))
-        if self._vad.is_speech(indata, SAMPLE_RATE):
+        is_speech = self._vad.is_speech(indata, SAMPLE_RATE)
+        # Publish raw PCM frame (int16) for downstream consumers
+        try:
+            arr = np.frombuffer(indata, np.int16)
+            msg_pcm = Int16MultiArray()
+            msg_pcm.data = arr.tolist()
+            self._pub_frames.publish(msg_pcm)
+        except Exception:
+            pass
+        # Publish VAD state for each frame
+        try:
+            self._pub_vad.publish(Bool(data=bool(is_speech)))
+        except Exception:
+            pass
+        if is_speech:
             self._buffer.extend(indata)
             self._frames.clear()
         else:
             self._frames.append(indata)
             if len(self._frames) * FRAME_DURATION > 800:
                 if self._buffer:
+                    # Emit full utterance PCM for accurate downstream ASR
+                    try:
+                        utt = np.frombuffer(self._buffer, np.int16)
+                        msg_utt = Int16MultiArray()
+                        msg_utt.data = utt.tolist()
+                        self._pub_utter.publish(msg_utt)
+                    except Exception:
+                        pass
                     self._queue.put(bytes(self._buffer))
                     self._buffer.clear()
                 self._frames.clear()

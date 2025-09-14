@@ -161,6 +161,7 @@ def stage_runtime_assets() -> None:
         "log_ticker.py",
         "chat_service.py",
         "asr_service.py",
+        "asr_utterance_service.py",
         "hrs04_node.py",
         "ssd1306_display_node.py",
         "oled_splash.py",
@@ -1190,6 +1191,17 @@ def launch_asr(cfg: dict | None = None, run=subprocess.run) -> None:
     install_service_unit("asr", cmd, run)
 
 
+def launch_asr_long(cfg: dict | None = None, run=subprocess.run) -> None:
+    """Install systemd unit for utterance-level ASR (higher accuracy).
+
+    Examples:
+        >>> launch_asr_long({'model': 'base'}, lambda cmd, check: None)  # doctest: +SKIP
+    """
+    model = (cfg or {}).get("model", "base")
+    cmd = [str(VENV_DIR / "bin/python"), script_path("asr_utterance_service.py"), "--model", model]
+    install_service_unit("asr_long", cmd, run)
+
+
 def launch_chat(run=subprocess.run) -> None:
     """Install systemd unit for the chat service.
 
@@ -1351,6 +1363,10 @@ def main() -> None:
             print("[setup] launching ASR service…")
             launch_asr(scfg)
             installed.append("asr")
+        elif svc == "asr_long":
+            print("[setup] launching ASR (utterance) service…")
+            launch_asr_long(scfg)
+            installed.append("asr_long")
         else:
             print(f"Unknown service {svc}")
     print(f"Installed services: {', '.join(installed)}")

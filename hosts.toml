@@ -24,8 +24,8 @@ h_offset = 2
 model = "tiny"
 
 [hosts.forebrain]
-services = ["voice", "logticker", "chat", "asr"]
-[hosts.forebrain.asr]
+services = ["voice", "logticker", "chat", "asr_long"]
+[hosts.forebrain.asr_long]
 model = "large-v2"
 
 [hosts.forebrain.chat]
