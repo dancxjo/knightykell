@@ -41,8 +41,9 @@ def stop_and_disable_units() -> None:
     # Try to stop and disable any psyche-* units
     for suffix in ("service", "timer"):
         try:
+            cmd = f"systemctl list-unit-files 'psyche-*.{suffix}' --no-legend | awk '{{print $1}}'"
             out = subprocess.run(
-                ["bash", "-lc", f"systemctl list-unit-files 'psyche-*.{suffix}' --no-legend | awk '{print $1}'"],
+                ["bash", "-lc", cmd],
                 text=True,
                 capture_output=True,
                 check=False,
@@ -140,4 +141,3 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
-
