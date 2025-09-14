@@ -971,9 +971,40 @@ def install_vision_packages(run=subprocess.run) -> None:
         >>> install_vision_packages(lambda cmd, check: None)  # doctest: +SKIP
     """
     try:
-        _venv_pip_install(["numpy", "opencv-python-headless"], run)
+        _venv_pip_install([
+            "numpy",
+            "opencv-contrib-python-headless",
+            "qdrant-client",
+            "neo4j",
+        ], run)
     except Exception:
         pass
+
+
+def install_vision_models(run=subprocess.run) -> None:
+    """Fetch face landmark and embedding models into a shared path.
+
+    Downloads:
+    - LBF landmark model (68-point): lbfmodel.yaml
+    - SFace face recognition embedding model: face_recognition_sface_2021dec.onnx
+    """
+    base = pathlib.Path(os.getenv("VISION_MODELS_DIR") or _read_env_file_var("VISION_MODELS_DIR", "/opt/psyche/models/vision") or "/opt/psyche/models/vision")
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    lbf = base / "lbfmodel.yaml"
+    sface = base / "face_recognition_sface_2021dec.onnx"
+    if not lbf.exists():
+        run([
+            "curl", "-fsSL", "-o", str(lbf),
+            "https://raw.githubusercontent.com/opencv/opencv_contrib/4.x/modules/face/data/lbfmodel.yaml",
+        ], check=True)
+    if not sface.exists():
+        run([
+            "curl", "-fsSL", "-o", str(sface),
+            "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx",
+        ], check=True)
 
 
 def install_voice_packages(run=subprocess.run) -> None:
@@ -1661,6 +1692,11 @@ def main() -> None:
     if "vision" in services:
         print("[setup] installing vision packages…")
         install_vision_packages()
+        print("[setup] fetching vision models…")
+        try:
+            install_vision_models()
+        except Exception:
+            pass
     if "voice" in services:
         print("[setup] configuring audio…")
         ensure_audio(get_audio_config(host, cfg))
