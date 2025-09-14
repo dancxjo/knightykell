@@ -530,6 +530,32 @@ def install_service_unit(name: str, cmd: list[str], run=subprocess.run, pre: lis
         >>> install_service_unit('with-pre', ['echo','ok'], pre=['/sbin/modprobe i2c-dev'])  # doctest: +SKIP
     """
     unit_path = SYSTEMD_DIR / f"psyche-{name}.service"
+
+    def _supplementary_groups_line() -> str:
+        """Return a ``SupplementaryGroups=`` line with only existing groups.
+
+        Includes common device groups (audio, i2c, gpio) but omits any that are
+        not present on the current system to avoid systemd failing at GROUP step.
+
+        Examples:
+            >>> line = _supplementary_groups_line()  # doctest: +SKIP
+            >>> isinstance(line, str)
+            True
+        """
+        candidates = ["audio", "i2c", "gpio"]
+        existing: list[str] = []
+        try:
+            import grp  # type: ignore
+            for g in candidates:
+                try:
+                    grp.getgrnam(g)
+                    existing.append(g)
+                except KeyError:
+                    continue
+        except Exception:
+            # If grp is unavailable, fall back to the full list
+            existing = candidates
+        return f"SupplementaryGroups={' '.join(existing)}" if existing else ""
     ros_setup = f"/opt/ros/{ROS_DISTRO}/setup.bash"
     # Prefer executing via `uv run` if available for better isolation and speed,
     # but fall back to running with the venv's python directly.
@@ -552,6 +578,7 @@ def install_service_unit(name: str, cmd: list[str], run=subprocess.run, pre: lis
     pre_lines = "\n".join(
         f"ExecStartPre=/bin/bash -lc '{p}'" for p in pre_cmds if p
     )
+    supp_line = _supplementary_groups_line()
     unit_content = f"""[Unit]
 Description=PSYCHE {name} service
 After=network.target
@@ -568,7 +595,7 @@ RestartSec=2
 WorkingDirectory={REPO_DIR}
 StandardOutput=journal
 StandardError=journal
-SupplementaryGroups=audio i2c gpio
+{supp_line}
 {pre_lines}
 ExecStart={wrapped}
 
