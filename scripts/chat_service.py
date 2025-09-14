@@ -77,11 +77,13 @@ class _OllamaBackend(_ChatBackend):
         parts.append("Assistant:")
         prompt = "\n\n".join(parts)
         try:
+            timeout = float(os.getenv("CHAT_OLLAMA_TIMEOUT", "30"))
             proc = subprocess.run(
                 ["ollama", "run", self.model, "-p", prompt],
                 check=True,
                 text=True,
                 capture_output=True,
+                timeout=timeout,
             )
             return proc.stdout.strip()
         except Exception as e:
@@ -115,8 +117,8 @@ class _LlamaCppBackend(_ChatBackend):
 
 
 def _select_backend() -> _ChatBackend | None:
-    # Prefer Ollama if installed; default model if not provided
-    model = os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
+    # Prefer Ollama if installed; default to Llama 3.2 small
+    model = os.getenv("OLLAMA_MODEL", "llama3.2:1b-instruct")
     if _has_cmd("ollama"):
         return _OllamaBackend(model=model)
     mp = os.getenv("LLAMA_MODEL_PATH")
@@ -143,6 +145,12 @@ class ChatNode(Node):
         if prompt:
             self._messages.append({"role": "system", "content": prompt})
         self._backend = _select_backend()
+        if isinstance(self._backend, _OllamaBackend):
+            self.get_logger().info(f"chat: backend=ollama model={self._backend.model}")
+        elif isinstance(self._backend, _LlamaCppBackend):
+            self.get_logger().info("chat: backend=llama.cpp (LLAMA_MODEL_PATH)")
+        else:
+            self.get_logger().warning("chat: backend unavailable; set OLLAMA_MODEL or LLAMA_MODEL_PATH")
         self._pub_voice = self.create_publisher(String, "voice", 10)
         self._pub_chat = self.create_publisher(String, "chat", 10)
         self.create_subscription(String, "asr", self._on_asr, 10)
@@ -155,7 +163,7 @@ class ChatNode(Node):
         # Add user message and attempt a reply
         self._messages.append({"role": "user", "content": text})
         if not self._backend:
-            self.get_logger().warning("No LLM backend available; skipping reply")
+            self.get_logger().warning("chat: backend unavailable; skipping response")
             return
         try:
             reply = self._backend.complete(self._messages)
@@ -167,6 +175,7 @@ class ChatNode(Node):
         # Publish to voice and chat topics, but defer logging until voice completes
         m = String()
         m.data = reply
+        self.get_logger().info("chat: sending reply to voice and chat topics")
         self._pub_voice.publish(m)
         self._pub_chat.publish(m)
         # Track pending assistant message until announcement completes

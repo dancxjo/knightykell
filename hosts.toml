@@ -10,9 +10,9 @@ echo_pin = 27
 [hosts.cerebellum]
 image = "ubuntu"
 model="pi5"
-services = ["voice", "logticker", "logsummarizer", "display", "asr", "chat"]
+services = ["voice", "logticker", "display", "asr", "chat"]
 [hosts.cerebellum.display]
-topics = ["/display", "/chat", "/asr"]
+topics = ["/chat", "/asr"]
 driver = "sh1106"
 width = 128
 height = 64
@@ -27,16 +27,17 @@ model = "tiny"
 # Optional system prompt that seeds the conversation
 prompt = "You are a concise robot assistant."
 # Optional: choose backend
-# ollama_model = "llama3.2:1b-instruct"
+ollama_model = "llama3.2:1b-instruct"
+# timeout = 30
 # gguf_url = "https://huggingface.co/TheBloke/Meta-Llama-3.2-1B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-1B-Instruct.Q4_K_M.gguf?download=true"
 
 
 [hosts.latimer]
-services = ["voice", "logticker", "logsummarizer"]
+services = ["voice", "logticker"]
 
 [hosts.forebrain]
-services = ["voice", "logticker", "logsummarizer"]
+services = ["voice", "logticker"]
 
 [hosts.monitor]
 image = "rpi"
-services = ["voice", "logticker", "logsummarizer"]
+services = ["voice", "logticker"]

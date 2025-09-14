@@ -159,7 +159,6 @@ def stage_runtime_assets() -> None:
     for name in (
         "voice_service.py",
         "log_ticker.py",
-        "log_summarizer.py",
         "chat_service.py",
         "asr_service.py",
         "hrs04_node.py",
@@ -468,7 +467,7 @@ def provision_base(hostname: str, config: dict, services: list[str], *, image: b
     - Install ROS 2 base and optional CycloneDDS
     - Stage runtime assets and SSH keys
     - Ensure Python venv and install zenoh
-    - Write base service env and per-service env (voice/log summarizer)
+    - Write base service env and per-service env (voice/chat)
     - If ``image=True``: install voice/asr/llama-cpp packages now
     
     Examples:
@@ -489,8 +488,7 @@ def provision_base(hostname: str, config: dict, services: list[str], *, image: b
     install_zeno(run)
     ensure_shell_env()
     ensure_service_env()
-    if "logsummarizer" in services:
-        ensure_logsummarizer_env(hostname, config)
+    # Log summarizer removed; LLM reserved for chat
     if "voice" in services:
         ensure_voice_env(hostname, config)
     # Build ROS2 workspace inside the image to reduce first-boot work
@@ -502,7 +500,7 @@ def provision_base(hostname: str, config: dict, services: list[str], *, image: b
     if image:
         if "voice" in services or "logticker" in services:
             install_voice_packages(run)
-        if "logsummarizer" in services:
+        if "chat" in services:
             install_llama_cpp(run)
         if "asr" in services:
             install_asr_packages(run)
@@ -1178,85 +1176,7 @@ def launch_logticker(run=subprocess.run) -> None:
     install_service_unit("logticker", cmd, run)
 
 
-def launch_logsummarizer(run=subprocess.run) -> None:
-    """Install systemd unit that summarizes logs to ``voice``.
-
-    Examples:
-        >>> launch_logsummarizer(lambda cmd, check: None)  # doctest: +SKIP
-    """
-    cmd = [str(VENV_DIR / "bin/python"), script_path("log_summarizer.py")]
-    install_service_unit("logsummarizer", cmd, run)
-
-
-def ensure_logsummarizer_env(hostname: str, config: dict) -> None:
-    """Write environment for the log summarizer from host config.
-
-    Reads optional ``[hosts.<name>.logsummarizer]`` keys and writes
-    variables into ``/etc/psyche.env``. Supported keys:
-    - ``interval`` -> ``SUMMARY_INTERVAL``
-    - ``max_lines`` -> ``SUMMARY_MAX_LINES``
-    - ``model_path`` -> ``LLAMA_MODEL_PATH``
-    - ``threads`` -> ``LLAMA_THREADS``
-    - ``ctx`` -> ``LLAMA_CTX``
-    - ``grammar_path`` -> ``LLAMA_GRAMMAR_PATH``
-    - ``top_k``/``top_p``/``min_p``/``temp``/``repeat_penalty``/``max_tokens`` -> corresponding ``LLAMA_*`` vars
-    - ``gguf_url``: if provided, attempts to download the file and set ``LLAMA_MODEL_PATH``
-    - ``ollama_model`` -> ``OLLAMA_MODEL`` (for alternate backend)
-
-    Examples:
-        >>> cfg = {'hosts': {'h': {'logsummarizer': {'interval': 10, 'model_path': '/m.gguf'}}}}
-        >>> ensure_logsummarizer_env('h', cfg)  # doctest: +SKIP
-    """
-    env_path = pathlib.Path("/etc/psyche.env")
-    env: dict[str, str] = {}
-    try:
-        if env_path.exists():
-            for line in env_path.read_text().splitlines():
-                if "=" in line:
-                    k, v = line.split("=", 1)
-                    env[k] = v
-    except Exception:
-        pass
-    lcfg = get_service_config(hostname, "logsummarizer", config)
-    if lcfg:
-        # Optional model download
-        if "gguf_url" in lcfg:
-            try:
-                path = fetch_llama_model(str(lcfg["gguf_url"]))
-                if path:
-                    env["LLAMA_MODEL_PATH"] = path
-            except Exception:
-                pass
-        if "model_path" in lcfg:
-            env["LLAMA_MODEL_PATH"] = str(lcfg["model_path"])
-        if "interval" in lcfg:
-            env["SUMMARY_INTERVAL"] = str(lcfg["interval"])
-        if "max_lines" in lcfg:
-            env["SUMMARY_MAX_LINES"] = str(lcfg["max_lines"])
-        if "threads" in lcfg:
-            env["LLAMA_THREADS"] = str(lcfg["threads"])
-        if "ctx" in lcfg:
-            env["LLAMA_CTX"] = str(lcfg["ctx"])
-        if "grammar_path" in lcfg:
-            env["LLAMA_GRAMMAR_PATH"] = str(lcfg["grammar_path"])
-        if "ollama_model" in lcfg:
-            env["OLLAMA_MODEL"] = str(lcfg["ollama_model"])
-        # Sampling
-        mapping = {
-            "top_k": "LLAMA_TOP_K",
-            "top_p": "LLAMA_TOP_P",
-            "min_p": "LLAMA_MIN_P",
-            "temp": "LLAMA_TEMP",
-            "repeat_penalty": "LLAMA_REPEAT_PENALTY",
-            "max_tokens": "LLAMA_MAX_TOKENS",
-        }
-        for k, ek in mapping.items():
-            if k in lcfg:
-                env[ek] = str(lcfg[k])
-    try:
-        env_path.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n")
-    except Exception:
-        pass
+        
 
 
 def launch_asr(cfg: dict | None = None, run=subprocess.run) -> None:
@@ -1288,6 +1208,7 @@ def ensure_chat_env(hostname: str, config: dict) -> None:
     - ``model_path`` -> ``LLAMA_MODEL_PATH``
     - ``gguf_url``: download and set ``LLAMA_MODEL_PATH``
     - ``ollama_model`` -> ``OLLAMA_MODEL``
+    - ``timeout`` (seconds) -> ``CHAT_OLLAMA_TIMEOUT`` (Ollama backend)
 
     Examples:
         >>> cfg = {'hosts': {'h': {'chat': {'prompt': 'You are helpful'}}}}
@@ -1318,6 +1239,8 @@ def ensure_chat_env(hostname: str, config: dict) -> None:
             env["CHAT_PROMPT"] = str(ccfg["prompt"])
         if "ollama_model" in ccfg:
             env["OLLAMA_MODEL"] = str(ccfg["ollama_model"])
+        if "timeout" in ccfg:
+            env["CHAT_OLLAMA_TIMEOUT"] = str(ccfg["timeout"])
     try:
         env_path.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n")
     except Exception:
@@ -1370,10 +1293,7 @@ def main() -> None:
         ensure_assets_prefetch(host, cfg)
     except Exception:
         pass
-    # Write env for log summarizer from host config, if present
-    if "logsummarizer" in services:
-        print("[setup] applying log summarizer env…")
-        ensure_logsummarizer_env(host, cfg)
+    # Log summarizer removed; logs are shown directly via logticker -> display
     # Write env for chat service, if present
     if "chat" in services:
         print("[setup] applying chat env…")
@@ -1385,7 +1305,8 @@ def main() -> None:
     if "voice" in services or "logticker" in services:
         print("[setup] installing voice packages…")
         install_voice_packages()
-    if "logsummarizer" in services:
+    # LLM is dedicated to chat; install only if chat is enabled
+    if "chat" in services:
         print("[setup] installing llama-cpp-python…")
         install_llama_cpp()
     if "chat" in services:
@@ -1419,10 +1340,6 @@ def main() -> None:
             print("[setup] launching logticker service…")
             launch_logticker()
             installed.append("logticker")
-        elif svc == "logsummarizer":
-            print("[setup] launching log summarizer service…")
-            launch_logsummarizer()
-            installed.append("logsummarizer")
         elif svc == "chat":
             print("[setup] launching chat service…")
             launch_chat()

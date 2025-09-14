@@ -24,7 +24,6 @@ from scripts.setup_host import (
     launch_asr,
     install_asr_packages,
     install_llama_cpp,
-    launch_logsummarizer,
     launch_chat,
     fetch_llama_model,
     ensure_assets_prefetch,
@@ -225,18 +224,7 @@ def test_launch_logticker_creates_systemd_unit(monkeypatch, tmp_path):
     assert ["systemctl", "enable", "--now", "psyche-logticker.service"] in calls
 
 
-def test_launch_logsummarizer_creates_systemd_unit(monkeypatch, tmp_path):
-    calls = []
-    monkeypatch.setattr("scripts.setup_host.SYSTEMD_DIR", tmp_path)
-
-    def fake_run(cmd, check):
-        calls.append(cmd)
-
-    launch_logsummarizer(fake_run)
-    unit = tmp_path / "psyche-logsummarizer.service"
-    assert unit.exists()
-    assert "log_summarizer.py" in unit.read_text()
-    assert ["systemctl", "enable", "--now", "psyche-logsummarizer.service"] in calls
+    
 
 
 def test_launch_chat_creates_systemd_unit(monkeypatch, tmp_path):

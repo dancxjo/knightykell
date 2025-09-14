@@ -62,27 +62,20 @@ class DisplayNode(Node):
         self._tick_interval = 0.15
         qos = QoSProfile(depth=10)
         for t in self._topics:
-            self.create_subscription(String, t, self._on_string, qos)
+            self.create_subscription(String, t, self._make_cb(t), qos)
         # Timers: ticker and page rotation
         self.create_timer(self._tick_interval, self._tick)
         self._splash("Display ready")
 
-    def _on_string(self, msg: String) -> None:
-        topic = msg._topic_name if hasattr(msg, "_topic_name") else None  # rclpy fills it
-        # rclpy doesn't expose topic on the message in all versions; map by callback context
-        # Update the page for this topic
-        if topic is None:
-            # Fallback: update all pages with latest text (last writer wins)
-            for p in self._pages:
-                p.text = msg.data
-                p.offset = 0
-        else:
+    def _make_cb(self, topic: str):
+        def _cb(msg: String) -> None:
             for p in self._pages:
                 if p.topic == topic:
                     p.text = msg.data
                     p.offset = 0
                     break
-        self._render()
+            self._render()
+        return _cb
 
     def _tick(self) -> None:
         # Advance ticker offset and possibly switch page

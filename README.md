@@ -71,7 +71,7 @@ Configuration
 ```
 [hosts]
 [hosts.brainstem]
-services = ["voice", "logticker", "logsummarizer", "hrs04", "display", "asr"]
+services = ["voice", "logticker", "hrs04", "display", "asr"]
 [hosts.brainstem.hrs04]
 trig_pin = 17
 echo_pin = 27
@@ -99,8 +99,7 @@ Services
 --------
 
 - `psyche-voice.service`: Queue text‑to‑speech from the `voice` topic
-- `psyche-logticker.service`: Publish journal lines to the `logs` topic
-- `psyche-logsummarizer.service`: Summarize recent `logs` and publish concise updates to `voice`
+- `psyche-logticker.service`: Publish journal lines to the `display` topic
 - `psyche-chat.service`: Maintain a chat conversation; reacts to `asr` and publishes replies to `voice`
 - `psyche-asr.service`: Publish Whisper transcripts on the `asr` topic
 - `psyche-hrs04.service`: Ultrasonic sensor node (pins from host config)
@@ -117,31 +116,10 @@ Large assets (GGUF LLMs, Piper voices, Whisper caches) default to fixed paths:
 
 If you seed assets during image build (via `ASSETS_SEED_DIR`), they are copied into these locations on first boot.
 
-Log summarization
------------------
+Logs on Display
+---------------
 
-The log ticker now publishes raw journal lines on the `logs` topic. The new
-log summarizer buffers recent lines and periodically (default every 20s)
-publishes a short English summary to the `voice` topic for speaking.
-
-Backends (auto-detected):
-- Ollama: set `OLLAMA_MODEL` (default `gpt-oss:20b`) and ensure `ollama` is installed
-- llama.cpp: set `LLAMA_MODEL_PATH` to a local `.gguf` model and install `llama-cpp-python` (provisioner helper available)
-- Fallback: heuristic summary when no local LLM is available
-
-Environment overrides:
-- `SUMMARY_INTERVAL` (seconds, default `20`)
-- `SUMMARY_MAX_LINES` (default `200`)
-- `LLAMA_MODEL_PATH`, `LLAMA_THREADS`, `LLAMA_CTX`
-- `LLAMA_GRAMMAR_PATH` (GBNF file to constrain output)
-- `LLAMA_TEMP`, `LLAMA_TOP_K`, `LLAMA_TOP_P`, `LLAMA_MIN_P`, `LLAMA_REPEAT_PENALTY`, `LLAMA_MAX_TOKENS`
-
-Provisioning helpers
---------------------
-
-- llama.cpp runtime: installer adds `llama-cpp-python` to the service venv.
-- Model download: set `hosts.<name>.logsummarizer.gguf_url` or `hosts.<name>.chat.gguf_url` to fetch a `.gguf` into `/opt/llama/models` and write `LLAMA_MODEL_PATH` automatically.
-- Env from config: set options under `[hosts.<name>.logsummarizer]` (e.g., `interval`, `max_lines`, `threads`, `ctx`, `grammar_path`, `top_k`, `temp`, etc.).
+The log ticker publishes raw journal lines on the `display` topic. Configure the display service to subscribe to `/display` to show logs. The LLM is dedicated to chat.
 
 Notes
 -----
@@ -246,6 +224,7 @@ services = ["voice", "asr", "chat"]
 [hosts.cerebellum.chat]
 prompt = "You are a concise robot assistant."
 # Optional backend settings:
-# ollama_model = "llama3.2:1b-instruct"
+# ollama_model = "llama3.2:1b-instruct"  # default if Ollama is present
+# timeout = 30  # seconds for Ollama backend
 # gguf_url = "https://huggingface.co/TheBloke/Meta-Llama-3.2-1B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-1B-Instruct.Q4_K_M.gguf?download=true"
 ```
