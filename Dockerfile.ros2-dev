@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       locales tzdata git bash-completion ripgrep \
       python3-pip python3-venv \
       build-essential \
-      alsa-utils ffmpeg libportaudio2 libasound2 libasound2-plugins pulseaudio-utils \
+      alsa-utils ffmpeg libportaudio2 libasound2t64 libasound2-plugins pulseaudio-utils \
       python3-colcon-common-extensions python3-rosdep \
       ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
     && rm -rf /var/lib/apt/lists/*
