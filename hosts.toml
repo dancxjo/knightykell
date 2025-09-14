@@ -10,7 +10,8 @@ echo_pin = 27
 [hosts.cerebellum]
 image = "ubuntu"
 model="pi5"
-services = ["voice", "logticker", "display", "topics", "notify", "fortune", "vision", "qdrant", "neo4j", "lidar", "imu", "sensors", "asr", "create", "singer"]
+services = ["logticker", "display", "topics", "notify", "fortune", "vision", "lidar", "imu", "sensors", "create"]
+
 [hosts.cerebellum.display]
 topics = ["/logs", "/topics", "/status/notify", "/status/scan", "/status/imu", "/status/create", "/vision/faces", "/vision/objects", "/vision/face_id"]
 driver = "sh1106"
@@ -21,45 +22,7 @@ address = "0x3C"
 rotate = 0
 h_offset = 2
 extra = ""  # optional extra bottom-line text
-[hosts.cerebellum.asr]
-model = "tiny"
 
-[hosts.cerebellum.create]
-# AutonomyLab Create 1 bringup (via create_bringup)
-package = "create_bringup"
-launch_file = "create_1.launch"
-# Use 'params.dev' for the serial device as expected by create_bringup
-params = { dev = "/dev/ttyUSB0" }
-# Additional launch args (optional): desc:=false to skip robot description
-# args = ["desc:=false"]
-
-[hosts.cerebellum.singer]
-port = "/dev/ttyUSB0"  # reuse create port
-baud = 57600
-period = 60
-
-[hosts.cerebellum.fortune]
-# Emit a fortune every minute and also show a desktop notification if available
-period = 60
-notify_send = true
-all = true
-offensive = false
-
-[hosts.forebrain]
-services = ["voice", "logticker", "chat", "asr_long"]
-[hosts.forebrain.asr_long]
-model = "large-v2"
-
-[hosts.forebrain.chat]
-# Optional system prompt that seeds the conversation
-prompt = "You are a robot named Pete Knightykell."
-backend = "llama"  # prefer local llama-cpp-python over Ollama
-# timeout = 30
-gguf_url = "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf"
-
-
-[hosts.latimer]
-services = []
 [hosts.cerebellum.vision]
 device = 0
 width = 640
@@ -84,3 +47,46 @@ repos = [
   { url = "https://github.com/ptrmu/ros2_shared.git" },
   { url = "https://github.com/AutonomyLab/create_robot.git", branch = "jazzy" },
 ]
+
+
+[hosts.cerebellum.create]
+# AutonomyLab Create 1 bringup (via create_bringup)
+package = "create_bringup"
+launch_file = "create_1.launch"
+# Use 'params.dev' for the serial device as expected by create_bringup
+params = { dev = "/dev/ttyUSB0" }
+# Additional launch args (optional): desc:=false to skip robot description
+# args = ["desc:=false"]
+
+[hosts.cerebellum.singer]
+port = "/dev/ttyUSB0"  # reuse create port
+baud = 57600
+period = 60
+
+
+[hosts.forebrain]
+services = ["voice", "logticker", "chat", "asr", "asr_long", "qdrant", "neo4j", "notify", "fortune"]
+[hosts.forebrain.asr]
+model = "small.en"
+
+[hosts.forebrain.asr_long]
+model = "large-v2"
+
+[hosts.forebrain.chat]
+prompt = "You are a robot named Pete Knightykell."
+# Switch back to llama.cpp (local GGUF)
+backend = "llama"
+# Provide a GGUF URL for your desired model. Keeping prior default here; replace
+# with a 20B GGUF of your choice when ready.
+gguf_url = "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf"
+# Optional Ollama settings (disabled when backend = "llama"):
+# ollama_model = "gpt_oss:20b"
+# timeout = 30
+
+
+[hosts.forebrain.fortune]
+# Emit a fortune every minute and also show a desktop notification if available
+period = 60
+notify_send = true
+all = true
+offensive = false
