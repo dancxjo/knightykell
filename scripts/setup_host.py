@@ -2412,22 +2412,21 @@ def launch_chat(run=subprocess.run) -> None:
 def launch_singer(cfg: dict | None = None, run=subprocess.run) -> None:
     """Install systemd unit for the Create melody announcer.
 
-    Reads port/baud from ``[hosts.<name>.singer]`` or falls back to
-    ``[hosts.<name>.create].port``.
+    Uses the create_robot topics (define_song/play_song). Does not access the
+    serial port directly. Reads optional ``period`` and ``song_id`` from
+    ``[hosts.<name>.singer]``.
 
     Examples:
-        >>> launch_singer({'port': '/dev/ttyUSB0'}, lambda cmd, check: None)  # doctest: +SKIP
+        >>> launch_singer({'period': 60, 'song_id': 0}, lambda cmd, check: None)  # doctest: +SKIP
     """
     cfg = cfg or {}
-    port = str(cfg.get("port") or cfg.get("device") or "/dev/ttyUSB0")
-    baud = str(cfg.get("baud", 57600))
     period = str(cfg.get("period", 60))
+    song_id = str(cfg.get("song_id", 0))
     cmd = [
         str(VENV_DIR / "bin/python"),
         script_path("create_singer.py"),
-        "--port", port,
-        "--baud", baud,
         "--period", period,
+        "--song-id", song_id,
     ]
     install_service_unit("singer", cmd, run)
 

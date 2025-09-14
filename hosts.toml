@@ -59,9 +59,10 @@ params = { dev = "/dev/ttyUSB0" }
 # args = ["desc:=false"]
 
 [hosts.cerebellum.singer]
-port = "/dev/ttyUSB0"  # reuse create port
-baud = 57600
+# Period in seconds between short tunes on the Create (via topics)
 period = 60
+# Optional: choose a song id (0-3)
+# song_id = 0
 
 
 [hosts.forebrain]
