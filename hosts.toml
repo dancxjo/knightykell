@@ -10,9 +10,9 @@ echo_pin = 27
 [hosts.cerebellum]
 image = "ubuntu"
 model="pi5"
-services = ["voice", "logticker", "display", "asr", "chat"]
+services = ["voice", "logticker", "display", "asr"]
 [hosts.cerebellum.display]
-topics = ["/chat", "/asr", "/logs"]
+topics = ["/asr", "/logs"]
 driver = "sh1106"
 width = 128
 height = 64
@@ -23,19 +23,18 @@ h_offset = 2
 [hosts.cerebellum.asr]
 model = "tiny"
 
-[hosts.cerebellum.chat]
+[hosts.forebrain]
+services = ["voice", "logticker", "chat", "asr"]
+[hosts.forebrain.asr]
+model = "large-v2"
+
+[hosts.forebrain.chat]
 # Optional system prompt that seeds the conversation
-prompt = "You are a concise robot assistant."
+prompt = "You are a robot named Pete Knightykell."
 backend = "llama"  # prefer local llama-cpp-python over Ollama
 # timeout = 30
 gguf_url = "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf"
 
-
-[hosts.latimer]
-services = ["voice", "logticker"]
-
-[hosts.forebrain]
-services = ["voice", "logticker"]
 
 [hosts.monitor]
 image = "rpi"
