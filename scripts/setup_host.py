@@ -1119,6 +1119,18 @@ def install_ros2(run=subprocess.run) -> None:
         >>> ["apt-get", "install", "-y", "ros-jazzy-ros-base"] in calls
         True
     """
+    # If an old/broken ROS apt entry exists (e.g., Pop!_OS 'plucky'), disable it
+    # before the first update to avoid 404s breaking the cache refresh.
+    keyring = pathlib.Path("/usr/share/keyrings/ros.gpg")
+    sources = pathlib.Path("/etc/apt/sources.list.d/ros2.list")
+    try:
+        if sources.exists():
+            disabled = sources.with_name(sources.name + ".disabled")
+            sources.rename(disabled)
+    except Exception:
+        # Non-fatal: proceed and let later steps correct the source
+        pass
+
     run(["apt-get", "update"], check=True)
     run(
         [
@@ -1139,8 +1151,6 @@ def install_ros2(run=subprocess.run) -> None:
         run(["add-apt-repository", "-y", "universe"], check=True)
     except Exception:
         pass
-    keyring = pathlib.Path("/usr/share/keyrings/ros.gpg")
-    sources = pathlib.Path("/etc/apt/sources.list.d/ros2.list")
     if not keyring.exists():
         run(
             [
@@ -1150,12 +1160,40 @@ def install_ros2(run=subprocess.run) -> None:
             ],
             check=True,
         )
-    if not sources.exists():
+    # Determine correct Ubuntu codename for the ROS apt repo and ensure file content matches.
+    # Pop!_OS 24.04 uses UBUNTU_CODENAME=plucky, but ROS packages are published
+    # under Ubuntu LTS codenames (e.g., noble for 24.04). Map by ROS_DISTRO first.
+    ros_suite_map = {"jazzy": "noble", "humble": "jammy"}
+    ros_suite = ros_suite_map.get(ROS_DISTRO.lower())
+    ubuntu_codename = None
+    try:
+        data = pathlib.Path("/etc/os-release").read_text()
+    except Exception:
+        data = ""
+    for line in data.splitlines():
+        if line.startswith("UBUNTU_CODENAME=") or line.startswith("VERSION_CODENAME="):
+            ubuntu_codename = line.split("=", 1)[1].strip().strip('"')
+            break
+    if ubuntu_codename == "plucky":
+        ubuntu_codename = "noble"
+    apt_suite = ros_suite or ubuntu_codename or "noble"
+    desired_line = (
+        "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros.gpg] "
+        f"http://packages.ros.org/ros2/ubuntu {apt_suite} main"
+    )
+    need_write = True
+    if sources.exists():
+        try:
+            current = sources.read_text()
+            need_write = desired_line not in current
+        except Exception:
+            need_write = True
+    if not sources.exists() or need_write:
         run(
             [
                 "bash",
                 "-lc",
-                'echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | tee /etc/apt/sources.list.d/ros2.list >/dev/null',
+                f'echo "{desired_line}" | tee /etc/apt/sources.list.d/ros2.list >/dev/null',
             ],
             check=True,
         )
