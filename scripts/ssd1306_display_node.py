@@ -285,7 +285,7 @@ class DisplayNode(Node):
         if wifi:
             parts.append(f"WiFi:{wifi}")
         if temp:
-            parts.append(f"CPU:{temp}")
+            parts.append(f"CPU:{temp.replace('C','°C')}")
         parts.append(f"RD:{rd}")
         if self._create_status:
             cs = self._create_status
