@@ -11,6 +11,7 @@ the ``chat`` topic for display/consumption by other nodes.
 Backends (auto-detected in this order):
 - Ollama (``ollama run $OLLAMA_MODEL``) — conversation is flattened into a
   single prompt
+- Hugging Face Transformers (``HF_MODEL`` id, e.g., ``openai/gpt-oss-20b``)
 - llama-cpp-python (``LLAMA_MODEL_PATH`` must point to a GGUF model)
 
 Environment variables:
@@ -18,6 +19,8 @@ Environment variables:
 - ``OLLAMA_MODEL``: Optional Ollama model tag (e.g., ``llama3.2:1b-instruct``)
 - ``LLAMA_MODEL_PATH``: GGUF model path for llama.cpp backend
 - ``LLAMA_CTX``/``LLAMA_THREADS``: Optional llama.cpp params
+- ``HF_MODEL``: Hugging Face model id (e.g., ``openai/gpt-oss-20b``)
+- ``HF_MAX_NEW_TOKENS``/``HF_TEMPERATURE``: Optional generation settings
 
 Examples:
     Run the service::
@@ -127,6 +130,7 @@ def _select_backend() -> _ChatBackend | None:
     """
     pref = (os.getenv("CHAT_BACKEND", "").strip().lower())
     model = os.getenv("OLLAMA_MODEL", "llama3.2:1b-instruct")
+    hf_model = os.getenv("HF_MODEL", "openai/gpt-oss-20b")
     mp = os.getenv("LLAMA_MODEL_PATH")
     if pref in ("llama", "llama.cpp"):
         if mp and os.path.exists(mp):
@@ -135,6 +139,13 @@ def _select_backend() -> _ChatBackend | None:
             except Exception:
                 return None
         return None
+    if pref in ("hf", "transformers", "huggingface"):
+        try:
+            # Light import check; heavy load happens on first completion
+            import transformers  # type: ignore
+            return _HFBackend(model_id=hf_model)
+        except Exception:
+            return None
     if pref == "ollama":
         if _has_cmd("ollama"):
             return _OllamaBackend(model=model)
@@ -142,12 +153,96 @@ def _select_backend() -> _ChatBackend | None:
     # Default behavior
     if _has_cmd("ollama"):
         return _OllamaBackend(model=model)
+    try:
+        import transformers  # type: ignore
+        return _HFBackend(model_id=hf_model)
+    except Exception:
+        pass
     if mp and os.path.exists(mp):
         try:
             return _LlamaCppBackend(model_path=mp)
         except Exception:
             return None
     return None
+
+
+class _HFBackend(_ChatBackend):
+    """Hugging Face Transformers backend for local inference.
+
+    Requires ``transformers`` and ``torch``. Model id is read from
+    ``HF_MODEL`` (e.g., ``openai/gpt-oss-20b``). Loads lazily on first use.
+    """
+
+    def __init__(self, model_id: str) -> None:
+        self.model_id = model_id
+        self._pipe = None  # type: ignore[var-annotated]
+
+    def _ensure_pipeline(self) -> None:
+        if self._pipe is not None:
+            return
+        try:
+            import transformers  # type: ignore
+            from transformers import AutoTokenizer, AutoModelForCausalLM  # type: ignore
+        except Exception as e:
+            raise RuntimeError(f"transformers unavailable: {e}")
+        # Optional dtype selection
+        torch_dtype = None
+        try:
+            import torch  # type: ignore
+            dt = os.getenv("HF_DTYPE", "").lower()
+            if dt in {"float16", "fp16", "half"}:
+                torch_dtype = torch.float16
+            elif dt in {"bfloat16", "bf16"}:
+                torch_dtype = torch.bfloat16
+        except Exception:
+            pass
+        # Load model/tokenizer; prefer automatic device placement when possible
+        try:
+            tok = AutoTokenizer.from_pretrained(self.model_id)
+            model = AutoModelForCausalLM.from_pretrained(
+                self.model_id,
+                torch_dtype=torch_dtype,
+                device_map="auto",
+            )
+            import transformers as _t  # type: ignore
+            self._pipe = _t.pipeline("text-generation", model=model, tokenizer=tok)
+        except Exception as e:
+            raise RuntimeError(f"failed to load {self.model_id}: {e}")
+
+    def complete(self, messages: List[Message]) -> str:
+        self._ensure_pipeline()
+        # Build a simple instruct-style prompt like the Ollama backend
+        parts: list[str] = []
+        for m in messages:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            if not content:
+                continue
+            if role == "system":
+                parts.append(f"System: {content}")
+            elif role == "assistant":
+                parts.append(f"Assistant: {content}")
+            else:
+                parts.append(f"User: {content}")
+        parts.append("Assistant:")
+        prompt = "\n\n".join(parts)
+        try:
+            max_new = int(os.getenv("HF_MAX_NEW_TOKENS", "256"))
+        except Exception:
+            max_new = 256
+        try:
+            temperature = float(os.getenv("HF_TEMPERATURE", "0.7"))
+        except Exception:
+            temperature = 0.7
+        try:
+            out = self._pipe(prompt, max_new_tokens=max_new, do_sample=True, temperature=temperature)  # type: ignore[attr-defined]
+            text = str(out[0]["generated_text"]) if out else ""
+            # Try to return only the assistant part after the last marker
+            if "Assistant:" in text:
+                text = text.split("Assistant:")[-1]
+            return text.strip()
+        except Exception as e:
+            return f"(hf error: {e})"
 
 
 class ChatNode(Node):
@@ -292,12 +387,15 @@ class ChatNode(Node):
         """
         backend = (
             "ollama" if isinstance(self._backend, _OllamaBackend) else
+            "hf" if isinstance(self._backend, _HFBackend) else
             "llama.cpp" if isinstance(self._backend, _LlamaCppBackend) else
             "unavailable"
         )
         model = ""
         if isinstance(self._backend, _OllamaBackend):
             model = getattr(self._backend, "model", "")
+        elif isinstance(self._backend, _HFBackend):
+            model = getattr(self._backend, "model_id", "")
         msg = String()
         err = self._last_error or ""
         msg.data = f"backend={backend} model={model} pending={len(self._pending)} last_error={err}"

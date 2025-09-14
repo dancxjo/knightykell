@@ -1726,6 +1726,84 @@ def install_llama_cpp(run=subprocess.run) -> None:
     _venv_pip_install(["llama-cpp-python"], run)
 
 
+def install_hf_chat(run=subprocess.run) -> None:
+    """Install Hugging Face chat dependencies into the service virtualenv.
+
+    Installs ``transformers``, ``torch`` (CPU), ``safetensors``, and ``sentencepiece``.
+
+    Examples:
+        >>> calls = []
+        >>> install_hf_chat(lambda cmd, check: calls.append(cmd))
+        >>> any('transformers' in c for cmd in calls for c in cmd)
+        True
+    """
+    # Always install base libs
+    _venv_pip_install(["transformers>=4.41", "safetensors", "sentencepiece"], run)
+    # Install torch suitable for the environment. Prefer CUDA wheels when NVIDIA GPU is present.
+    pip = str(VENV_DIR / "bin/pip")
+    def _has_nvidia() -> bool:
+        try:
+            # nvidia-smi is available only when a driver is present
+            res = subprocess.run(["nvidia-smi"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if res.returncode == 0:
+                return True
+        except Exception:
+            pass
+        try:
+            return pathlib.Path("/proc/driver/nvidia/version").exists()
+        except Exception:
+            return False
+    try:
+        if _has_nvidia():
+            # Use PyTorch CUDA 12.1 wheels (broadly compatible on recent drivers)
+            run([pip, "install", "--index-url", "https://download.pytorch.org/whl/cu121", "torch", "torchvision", "torchaudio"], check=True)
+        else:
+            # CPU wheels
+            run([pip, "install", "--index-url", "https://download.pytorch.org/whl/cpu", "torch", "torchvision", "torchaudio"], check=True)
+    except Exception:
+        # Fall back to generic PyPI if the above indexes are unavailable
+        run([pip, "install", "torch"], check=False)
+
+
+def install_cuda_if_available(run=subprocess.run) -> None:
+    """Detect NVIDIA GPU and install drivers/CUDA toolkit when applicable.
+
+    Best-effort on Ubuntu/Pop derivatives:
+    - Installs ``ubuntu-drivers-common`` then runs ``ubuntu-drivers autoinstall``
+    - Installs ``nvidia-cuda-toolkit`` for compiler/runtime (CPU fallback safe)
+
+    Examples:
+        >>> install_cuda_if_available(lambda cmd, check: None)  # doctest: +SKIP
+    """
+    # Quick detection to avoid touching systems without NVIDIA hardware
+    try:
+        has_gpu = False
+        out = subprocess.run(["bash", "-lc", "lspci -nnk | grep -i nvidia"], text=True, capture_output=True)
+        has_gpu = bool(out.stdout.strip())
+    except Exception:
+        has_gpu = pathlib.Path("/proc/driver/nvidia/version").exists()
+    if not has_gpu:
+        return
+    # Try driver autoinstall first
+    try:
+        run(["apt-get", "update"], check=True)
+        run(["apt-get", "install", "-y", "ubuntu-drivers-common"], check=True)
+        run(["ubuntu-drivers", "autoinstall"], check=False)
+    except Exception:
+        # Fallback to specific driver meta-packages (best-effort)
+        for pkg in ("nvidia-driver-550", "nvidia-driver-535"):
+            try:
+                run(["apt-get", "install", "-y", pkg], check=True)
+                break
+            except Exception:
+                continue
+    # CUDA toolkit (provides nvcc and shared libs used by some wheels)
+    try:
+        run(["apt-get", "install", "-y", "nvidia-cuda-toolkit"], check=False)
+    except Exception:
+        pass
+
+
 def fetch_llama_model(url: str, dest_dir: str | None = None, run=subprocess.run) -> str | None:
     """Download a GGUF model from ``url`` to ``dest_dir`` and return its path.
 
@@ -2288,8 +2366,10 @@ def ensure_chat_env(hostname: str, config: dict) -> None:
             env["LLAMA_MODEL_PATH"] = str(ccfg["model_path"])
         if "prompt" in ccfg:
             env["CHAT_PROMPT"] = str(ccfg["prompt"])
-        if "ollama_model" in ccfg:
-            env["OLLAMA_MODEL"] = str(ccfg["ollama_model"])
+    if "ollama_model" in ccfg:
+        env["OLLAMA_MODEL"] = str(ccfg["ollama_model"])
+    if "hf_model" in ccfg:
+        env["HF_MODEL"] = str(ccfg["hf_model"])
         if "timeout" in ccfg:
             env["CHAT_OLLAMA_TIMEOUT"] = str(ccfg["timeout"])
         if "backend" in ccfg:
@@ -2372,6 +2452,14 @@ def main() -> None:
     if "chat" in services:
         print("[setup] installing llama-cpp-python…")
         install_llama_cpp()
+        # If chat backend is Hugging Face transformers, install required packages
+        try:
+            ccfg = get_service_config(host, "chat", cfg)
+        except Exception:
+            ccfg = None
+        if ccfg and str(ccfg.get("backend", "")).lower() in {"hf", "transformers", "huggingface"}:
+            print("[setup] installing Hugging Face transformers (chat)…")
+            install_hf_chat()
     prefetch_cfg = (cfg.get("hosts", {}).get(host, {}).get("assets", {}).get("prefetch", {}) or {})
     if "asr" in services or ("whisper" in prefetch_cfg):
         # Install ASR deps when ASR service is enabled or when hosts.toml requests whisper prefetch

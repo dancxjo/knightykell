@@ -82,6 +82,9 @@ gguf_url = "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/
 # Optional Ollama settings (disabled when backend = "llama"):
 # ollama_model = "gpt_oss:20b"
 # timeout = 30
+# Optional Hugging Face Transformers backend (CPU/GPU via torch). Uncomment to use:
+# backend = "hf"
+# hf_model = "openai/gpt-oss-20b"
 
 
 [hosts.forebrain.fortune]
