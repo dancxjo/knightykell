@@ -42,6 +42,8 @@ period = 60
 # Emit a fortune every 5 minutes and also show a desktop notification if available
 period = 300
 notify_send = true
+all = true
+offensive = false
 
 [hosts.forebrain]
 services = ["voice", "logticker", "chat", "asr_long"]

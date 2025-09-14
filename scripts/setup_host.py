@@ -1114,6 +1114,21 @@ def install_camera_ros_packages(run=subprocess.run) -> None:
         pass
 
 
+def install_fortune_packages(run=subprocess.run) -> None:
+    """Install fortune databases for variety (best-effort)."""
+    try:
+        run([
+            "apt-get", "install", "-y",
+            "fortune-mod",
+            "fortunes",
+            "fortunes-min",
+            "fortunes-off",
+            "fortunes-bofh-excuses",
+        ], check=False)
+    except Exception:
+        pass
+
+
 def install_qdrant(run=subprocess.run) -> None:
     """Install Qdrant vector DB as a system service.
 
@@ -1688,9 +1703,15 @@ def launch_fortune(cfg: dict | None = None, run=subprocess.run) -> None:
     cfg = cfg or {}
     period = str(cfg.get("period", 300))
     do_notify = cfg.get("notify_send", False)
+    use_all = cfg.get("all", True)
+    offensive = cfg.get("offensive", False)
     cmd = [str(VENV_DIR / "bin/python"), script_path("fortune_notify.py"), "--period", period]
     if do_notify:
         cmd.append("--notify-send")
+    if use_all:
+        cmd.append("--all")
+    if offensive:
+        cmd.append("--offensive")
     install_service_unit("fortune", cmd, run)
 
 
@@ -1985,6 +2006,9 @@ def main() -> None:
             pass
         print("[setup] installing ROS camera packages…")
         install_camera_ros_packages()
+    if "fortune" in services:
+        print("[setup] installing fortune databases…")
+        install_fortune_packages()
     if "qdrant" in services:
         print("[setup] installing Qdrant…")
         install_qdrant()

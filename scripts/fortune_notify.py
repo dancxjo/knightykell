@@ -39,9 +39,14 @@ FALLBACKS = [
 ]
 
 
-def _run_fortune() -> Optional[str]:
+def _run_fortune(use_all: bool = False, offensive: bool = False) -> Optional[str]:
     try:
-        out = subprocess.check_output(["fortune", "-s"], text=True, timeout=2)
+        args = ["fortune", "-s"]
+        if use_all:
+            args.insert(1, "-a")
+        if offensive:
+            args.insert(1, "-o")
+        out = subprocess.check_output(args, text=True, timeout=2)
         # Normalize whitespace to one line for displays
         return " ".join(out.strip().split())
     except Exception:
@@ -61,12 +66,15 @@ def _notify_send(summary: str, body: str | None = None) -> None:
 class FortuneNode(Node):
     """Publish fortunes periodically to `status/notify` and `voice`."""
 
-    def __init__(self, period: float = 300.0, do_notify: bool = False) -> None:
+    def __init__(self, period: float = 300.0, do_notify: bool = False,
+                 use_all: bool = False, offensive: bool = False) -> None:
         super().__init__("fortune_notify")
         self._pub_voice = self.create_publisher(String, "voice", 10)
         self._pub_status = self.create_publisher(String, "status/notify", 10)
         self._period = float(period)
         self._do_notify = bool(do_notify)
+        self._use_all = bool(use_all)
+        self._offensive = bool(offensive)
         self._last = 0.0
         self.create_timer(1.0, self._tick)
 
@@ -75,7 +83,7 @@ class FortuneNode(Node):
         if now - self._last < self._period:
             return
         self._last = now
-        text = _run_fortune() or random.choice(FALLBACKS)
+        text = _run_fortune(self._use_all, self._offensive) or random.choice(FALLBACKS)
         msg = String(); msg.data = text
         self._pub_status.publish(msg)
         self._pub_voice.publish(msg)
@@ -87,9 +95,12 @@ def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--period", type=float, default=300.0, help="seconds between fortunes")
     p.add_argument("--notify-send", action="store_true", help="also emit a desktop notification")
+    p.add_argument("--all", action="store_true", help="use all databases (-a)")
+    p.add_argument("--offensive", action="store_true", help="include offensive fortunes (-o)")
     ns = p.parse_args(argv)
     rclpy.init()
-    node = FortuneNode(period=ns.period, do_notify=ns.notify_send)
+    node = FortuneNode(period=ns.period, do_notify=ns.notify_send,
+                       use_all=ns.all, offensive=ns.offensive)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
@@ -101,4 +112,3 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
-
