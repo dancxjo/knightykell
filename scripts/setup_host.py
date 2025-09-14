@@ -1635,7 +1635,7 @@ def install_pi_hw_packages(run=subprocess.run) -> None:
     """
     # Best-effort apt packages; do not bail if unavailable on this distro
     try:
-        run(["apt-get", "install", "-y", "python3-gpiozero", "python3-lgpio", "i2c-tools", "libi2c-dev"], check=True)
+        run(["apt-get", "install", "-y", "python3-gpiozero", "python3-lgpio", "i2c-tools", "libi2c-dev", "python3-pil"], check=True)
     except Exception:
         pass
     # Ensure service user can access GPIO and I2C devices (best-effort)
@@ -1647,8 +1647,17 @@ def install_pi_hw_packages(run=subprocess.run) -> None:
         run(["usermod", "-aG", "i2c", SERVICE_USER], check=True)
     except Exception:
         pass
-    # Always ensure Python deps are installed regardless of apt success
-    _venv_pip_install(["luma.oled", "Pillow"], run)
+    # Always ensure Python deps are installed regardless of apt success.
+    # Prefer system Pillow via python3-pil to avoid problematic wheels on aarch64.
+    # Install luma.oled in the venv; include smbus2 for I2C helpers.
+    try:
+        _venv_pip_install(["luma.oled", "smbus2"], run)
+    except Exception:
+        # As a fallback, try to install Pillow from pip with a conservative pin
+        try:
+            _venv_pip_install(["Pillow<=10.3.0"], run)
+        except Exception:
+            pass
     # Best-effort: enable I2C at boot on Raspberry Pi and load module now
     try:
         with open("/proc/device-tree/model", "rb") as fh:
