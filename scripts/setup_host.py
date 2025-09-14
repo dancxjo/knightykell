@@ -2123,6 +2123,13 @@ def main() -> None:
         ensure_ros2_extra_repos(host, cfg)
     except Exception:
         pass
+    # Install Pi hardware deps before the first workspace build if needed
+    if any(s in services for s in ("hrs04", "display", "imu")):
+        print("[setup] installing Pi hardware packages…")
+        try:
+            install_pi_hw_packages()
+        except Exception:
+            pass
     print("[setup] building ROS 2 workspace…")
     setup_workspace()
     print("[setup] ensuring SSH keys…")
@@ -2198,9 +2205,7 @@ def main() -> None:
     if "voice" in services:
         print("[setup] configuring audio…")
         ensure_audio(get_audio_config(host, cfg))
-    if any(s in services for s in ("hrs04", "display")):
-        print("[setup] installing Pi hardware packages…")
-        install_pi_hw_packages()
+    # Pi hardware packages already installed above if needed
     # Ensure serial access for Create, if present
     if "create" in services and SERVICE_USER != "root":
         try:
