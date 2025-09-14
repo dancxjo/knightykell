@@ -27,9 +27,9 @@ model = "tiny"
 # Optional system prompt that seeds the conversation
 prompt = "You are a concise robot assistant."
 # Optional: choose backend
-ollama_model = "llama3.2:1b-instruct"
+#ollama_model = "llama3.2:1b-instruct"
 # timeout = 30
-# gguf_url = "https://huggingface.co/TheBloke/Meta-Llama-3.2-1B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-1B-Instruct.Q4_K_M.gguf?download=true"
+gguf_url = "https://huggingface.co/TheBloke/Meta-Llama-3.2-1B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-1B-Instruct.Q4_K_M.gguf?download=true"
 
 
 [hosts.latimer]
