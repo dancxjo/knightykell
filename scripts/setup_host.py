@@ -351,6 +351,23 @@ def setup_workspace(run=subprocess.run) -> None:
                 ["sudo", "-u", SERVICE_USER, "git", "clone", REPO_URL, str(target)],
                 check=True,
             )
+    # Ensure common native deps are present (best-effort), then rosdep, then build
+    try:
+        run(["apt-get", "update"], check=False)
+        run(["apt-get", "install", "-y", "libboost-dev", "libboost-system-dev"], check=False)
+    except Exception:
+        pass
+    try:
+        run(
+            [
+                "bash",
+                "-lc",
+                f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && rosdep update && rosdep install --from-paths src --ignore-src -r -y",
+            ],
+            check=False,
+        )
+    except Exception:
+        pass
     run(
         [
             "sudo",
