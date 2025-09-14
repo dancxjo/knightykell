@@ -1056,7 +1056,7 @@ def launch_hrs04(cfg: dict, run=subprocess.run) -> None:
         >>> launch_hrs04({'trig_pin': 1, 'echo_pin': 2})  # doctest: +SKIP
     """
     cmd = [
-        str(VENV_DIR / "bin/python"),
+        "python3",
         script_path("hrs04_node.py"),
         f"--trig={cfg.get('trig_pin')}",
         f"--echo={cfg.get('echo_pin')}",
@@ -1082,7 +1082,7 @@ def launch_display(cfg: dict, run=subprocess.run) -> None:
     page_seconds = str(cfg.get("page_seconds", 8.0))
     tick_interval = str(cfg.get("tick_interval", 0.10))
     cmd = [
-        str(VENV_DIR / "bin/python"),
+        "python3",
         script_path("ssd1306_display_node.py"),
         "--driver", driver,
         "--width", width,
@@ -1887,7 +1887,7 @@ def launch_voice(run=subprocess.run) -> None:
     Examples:
         >>> launch_voice(lambda cmd, check: None)  # doctest: +SKIP
     """
-    cmd = [str(VENV_DIR / "bin/python"), script_path("voice_service.py")]
+    cmd = ["python3", script_path("voice_service.py")]
     install_service_unit("voice", cmd, run)
 
 
@@ -1986,7 +1986,7 @@ def launch_logticker(run=subprocess.run) -> None:
     Examples:
         >>> launch_logticker(lambda cmd, check: None)  # doctest: +SKIP
     """
-    cmd = [str(VENV_DIR / "bin/python"), script_path("log_ticker.py")]
+    cmd = ["python3", script_path("log_ticker.py")]
     install_service_unit("logticker", cmd, run)
 
 
@@ -1999,7 +1999,7 @@ def launch_topics(run=subprocess.run) -> None:
     Examples:
         >>> launch_topics(lambda cmd, check: None)  # doctest: +SKIP
     """
-    cmd = [str(VENV_DIR / "bin/python"), script_path("topic_list_service.py")]
+    cmd = ["python3", script_path("topic_list_service.py")]
     install_service_unit("topics", cmd, run)
 
 
@@ -2009,7 +2009,7 @@ def launch_notify(run=subprocess.run) -> None:
     Examples:
         >>> launch_notify(lambda cmd, check: None)  # doctest: +SKIP
     """
-    cmd = [str(VENV_DIR / "bin/python"), script_path("notify_to_voice.py")]
+    cmd = ["python3", script_path("notify_to_voice.py")]
     install_service_unit("notify", cmd, run)
 
 
@@ -2024,7 +2024,7 @@ def launch_fortune(cfg: dict | None = None, run=subprocess.run) -> None:
     do_notify = cfg.get("notify_send", False)
     use_all = cfg.get("all", True)
     offensive = cfg.get("offensive", False)
-    cmd = [str(VENV_DIR / "bin/python"), script_path("fortune_notify.py"), "--period", period]
+    cmd = ["python3", script_path("fortune_notify.py"), "--period", period]
     if do_notify:
         cmd.append("--notify-send")
     if use_all:
@@ -2044,7 +2044,7 @@ def launch_asr(cfg: dict | None = None, run=subprocess.run) -> None:
         >>> launch_asr({'model': 'tiny'}, lambda cmd, check: None)  # doctest: +SKIP
     """
     model = (cfg or {}).get("model", "tiny")
-    cmd = [str(VENV_DIR / "bin/python"), script_path("asr_service.py"), "--model", model]
+    cmd = ["python3", script_path("asr_service.py"), "--model", model]
     install_service_unit("asr", cmd, run)
 
 
@@ -2055,7 +2055,7 @@ def launch_asr_long(cfg: dict | None = None, run=subprocess.run) -> None:
         >>> launch_asr_long({'model': 'base'}, lambda cmd, check: None)  # doctest: +SKIP
     """
     model = (cfg or {}).get("model", "base")
-    cmd = [str(VENV_DIR / "bin/python"), script_path("asr_utterance_service.py"), "--model", model]
+    cmd = ["python3", script_path("asr_utterance_service.py"), "--model", model]
     install_service_unit("asr_long", cmd, run)
 
 
@@ -2157,13 +2157,13 @@ def launch_imu(cfg: dict | None = None, run=subprocess.run) -> None:
 
 def launch_sensors_status(run=subprocess.run) -> None:
     """Install systemd unit for sensor status summarizer."""
-    cmd = [str(VENV_DIR / "bin/python"), script_path("sensor_status.py")]
+    cmd = ["python3", script_path("sensor_status.py")]
     install_service_unit("sensors", cmd, run)
 
 
 def launch_create_health(run=subprocess.run) -> None:
     """Install systemd unit publishing Create connection health."""
-    cmd = [str(VENV_DIR / "bin/python"), script_path("create_health.py"), "--timeout", "5"]
+    cmd = ["python3", script_path("create_health.py"), "--timeout", "5"]
     install_service_unit("create_status", cmd, run)
 
 
@@ -2195,7 +2195,7 @@ def launch_chat(run=subprocess.run) -> None:
     Examples:
         >>> launch_chat(lambda cmd, check: None)  # doctest: +SKIP
     """
-    cmd = [str(VENV_DIR / "bin/python"), script_path("chat_service.py")]
+    cmd = ["python3", script_path("chat_service.py")]
     install_service_unit("chat", cmd, run)
 
 
