@@ -22,10 +22,11 @@ SSH_DIR = pathlib.Path("/etc/psyche-ssh")
 SERVICE_USER = "pete"
 HOME_DIR = pathlib.Path(f"/home/{SERVICE_USER}")
 REPO_URL = "https://example.com/psyche.git"
-REPO_DIR = HOME_DIR / "psyche"
-WORKSPACE = HOME_DIR / "ros2_ws"
+# Place workspace and repo under /opt for easier admin access
+REPO_DIR = pathlib.Path("/opt/psyche")
+WORKSPACE = pathlib.Path("/opt/ros2_ws")
 SYSTEMD_DIR = pathlib.Path("/etc/systemd/system")
-VENV_DIR = HOME_DIR / ".venv"
+VENV_DIR = REPO_DIR / ".venv"
 
 
 def load_config(path: pathlib.Path | str = CONFIG_PATH) -> dict:
@@ -180,6 +181,13 @@ def stage_runtime_assets() -> None:
         src = scripts_src / name
         if src.exists():
             shutil.copy2(src, opt / "scripts" / name)
+    # Make admin-friendly perms
+    try:
+        subprocess.run(["chgrp", "-R", "sudo", str(opt)], check=False)
+        subprocess.run(["chmod", "-R", "g+w", str(opt)], check=False)
+        subprocess.run(["chown", "-R", f"{SERVICE_USER}:{SERVICE_USER}", str(opt)], check=False)
+    except Exception:
+        pass
     # Copy hosts.toml so firstboot/setup can find it under /opt/psyche
     if CONFIG_PATH.exists():
         try:
@@ -248,7 +256,7 @@ def ensure_service_user(run=subprocess.run) -> None:
 
 
 def clone_repo(run=subprocess.run) -> None:
-    """Populate ``/home/pete/psyche`` for the service user.
+    """Populate ``/opt/psyche`` with the runtime repo for services.
 
     Behavior:
     - If the environment variable ``PSYCHE_SRC`` points to a local checkout,
@@ -334,7 +342,10 @@ def setup_workspace(run=subprocess.run) -> None:
     """
     # Ensure workspace exists and is writable by the service user
     WORKSPACE.mkdir(parents=True, exist_ok=True)
-    run(["chown", "-R", f"{SERVICE_USER}:{SERVICE_USER}", str(WORKSPACE)], check=True)
+    # Admin-friendly perms: group sudo, group-writable
+    run(["chgrp", "-R", "sudo", str(WORKSPACE)], check=False)
+    run(["chmod", "-R", "g+w", str(WORKSPACE)], check=False)
+    run(["chown", "-R", f"{SERVICE_USER}:{SERVICE_USER}", str(WORKSPACE)], check=False)
     src = WORKSPACE / "src"
     src.mkdir(parents=True, exist_ok=True)
     target = src / "psyche"
@@ -439,7 +450,7 @@ Environment=ROS_DISTRO=jazzy
 EnvironmentFile=-/etc/psyche.env
 Restart=on-failure
 RestartSec=2
-WorkingDirectory={HOME_DIR}
+WorkingDirectory={REPO_DIR}
 StandardOutput=journal
 StandardError=journal
 SupplementaryGroups=audio i2c gpio
@@ -518,8 +529,8 @@ def ensure_shell_env() -> None:
 if [ -f /opt/ros/jazzy/setup.sh ]; then
   . /opt/ros/jazzy/setup.sh
 fi
-if [ -f {HOME_DIR}/ros2_ws/install/setup.sh ]; then
-  . {HOME_DIR}/ros2_ws/install/setup.sh
+if [ -f {WORKSPACE}/install/setup.sh ]; then
+  . {WORKSPACE}/install/setup.sh
 fi
 """.lstrip()
     p = pathlib.Path("/etc/profile.d/psyche-ros2.sh")
