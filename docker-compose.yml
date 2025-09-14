@@ -15,6 +15,7 @@ services:
       - ROS_LOCALHOST_ONLY=0
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - PSYCHE_SRC=/opt/psyche
+      - PSYCHE_DISABLE_SYSTEMD=1
     volumes:
       - ./:/opt/psyche
       - ./ros2_ws:/opt/ros2_ws
@@ -24,3 +25,92 @@ services:
     command: ["bash", "-lc", "ros2 daemon start; tail -f /dev/null"]
     restart: unless-stopped
 
+  # Optional service with ALSA device passthrough for voice/ASR
+  ros2-audio:
+    profiles: ["audio"]
+    container_name: ros2-dev-audio
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2-dev
+      args:
+        ROS_DISTRO: ${ROS_DISTRO:-jazzy}
+    network_mode: host
+    environment:
+      - ROS_DISTRO=${ROS_DISTRO:-jazzy}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - ROS_LOCALHOST_ONLY=0
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - PSYCHE_SRC=/opt/psyche
+      - PSYCHE_DISABLE_SYSTEMD=1
+      - ALSA_CARD=${ALSA_CARD:-}
+      - ALSA_PCM=${ALSA_PCM:-}
+      - AUDIODEV=${AUDIODEV:-}
+      - ESPEAKNG_AUDIO_OUTPUT=alsa
+    volumes:
+      - ./:/opt/psyche
+      - ./ros2_ws:/opt/ros2_ws
+      - ./cache:/opt/psyche/cache
+    working_dir: /opt/psyche
+    entrypoint: ["/ros_entrypoint.sh"]
+    command: ["bash", "-lc", "ros2 daemon start; tail -f /dev/null"]
+    restart: unless-stopped
+    devices:
+      - /dev/snd:/dev/snd
+    group_add:
+      - audio
+
+  # PulseAudio client container (no /dev/snd) that talks to the host Pulse server
+  ros2-pulse:
+    profiles: ["pulse"]
+    container_name: ros2-dev-pulse
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2-dev
+      args:
+        ROS_DISTRO: ${ROS_DISTRO:-jazzy}
+    network_mode: host
+    environment:
+      - ROS_DISTRO=${ROS_DISTRO:-jazzy}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - ROS_LOCALHOST_ONLY=0
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - PSYCHE_SRC=/opt/psyche
+      - PSYCHE_DISABLE_SYSTEMD=1
+      - PULSE_SERVER=unix:/tmp/pulse-native
+    volumes:
+      - ./:/opt/psyche
+      - ./ros2_ws:/opt/ros2_ws
+      - ./cache:/opt/psyche/cache
+      # Mount host Pulse socket and auth cookie
+      - ${XDG_RUNTIME_DIR}/pulse/native:/tmp/pulse-native
+      - ${HOME}/.config/pulse/cookie:/root/.config/pulse/cookie:ro
+    working_dir: /opt/psyche
+    entrypoint: ["/ros_entrypoint.sh"]
+    command: ["bash", "-lc", "ros2 daemon start; tail -f /dev/null"]
+    restart: unless-stopped
+
+  # One-shot provisioning (downloads models, sets up venv, installs deps)
+  ros2-provision:
+    profiles: ["provision"]
+    container_name: ros2-dev-provision
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2-dev
+      args:
+        ROS_DISTRO: ${ROS_DISTRO:-jazzy}
+    network_mode: host
+    environment:
+      - ROS_DISTRO=${ROS_DISTRO:-jazzy}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - ROS_LOCALHOST_ONLY=0
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - PSYCHE_SRC=/opt/psyche
+      - PSYCHE_DISABLE_SYSTEMD=1
+    volumes:
+      - ./:/opt/psyche
+      - ./ros2_ws:/opt/ros2_ws
+      - ./cache:/opt/psyche/cache
+    working_dir: /opt/psyche
+    entrypoint: ["/ros_entrypoint.sh"]
+    command: ["bash", "-lc", "env PSYCHE_DISABLE_SYSTEMD=1 PSYCHE_SRC=/opt/psyche python3 /opt/psyche/scripts/setup_host.py"]
+    restart: "no"

@@ -31,6 +31,12 @@ REPO_DIR = pathlib.Path("/opt/psyche")
 WORKSPACE = pathlib.Path("/opt/ros2_ws")
 SYSTEMD_DIR = pathlib.Path("/etc/systemd/system")
 VENV_DIR = REPO_DIR / ".venv"
+# In containers (no systemd) allow skipping unit management by setting
+# PSYCHE_DISABLE_SYSTEMD=1. Also auto-disable if systemd is not present.
+DISABLE_SYSTEMD = (
+    os.getenv("PSYCHE_DISABLE_SYSTEMD", "").strip().lower() in {"1", "true", "yes"}
+    or not pathlib.Path("/run/systemd/system").exists()
+)
 
 # Default branch suggestions for common third-party repos per ROS distro
 _REPO_BRANCH_DEFAULTS: dict[str, dict[str, str]] = {
@@ -531,7 +537,14 @@ ExecStart={wrapped}
 [Install]
 WantedBy=multi-user.target
 """
-    unit_path.write_text(unit_content)
+    try:
+        unit_path.write_text(unit_content)
+    except PermissionError:
+        # Non-root or restricted environment; skip silently
+        return
+    if DISABLE_SYSTEMD:
+        # In containers, skip systemd management entirely.
+        return
     # Reload units so changes take effect on re-provision runs
     run(["systemctl", "daemon-reload"], check=True)
     run(["systemctl", "enable", "--now", f"psyche-{name}.service"], check=True)
@@ -548,6 +561,8 @@ def stop_old_services(services: list[str], run=subprocess.run) -> None:
     Examples:
         >>> stop_old_services(["voice", "asr"], lambda cmd, check: None)  # doctest: +SKIP
     """
+    if DISABLE_SYSTEMD:
+        return
     for name in services:
         try:
             run(["systemctl", "stop", f"psyche-{name}.service"], check=False)
@@ -563,6 +578,8 @@ def disable_absent_services(services: list[str], run=subprocess.run) -> None:
 
     Preserves helper units like ``psyche-update.timer``.
     """
+    if DISABLE_SYSTEMD:
+        return
     desired = set(services)
     try:
         # List all installed psyche-*.service unit files
@@ -1334,6 +1351,8 @@ storage:
 
 def launch_qdrant(run=subprocess.run) -> None:
     """Create a systemd unit for qdrant and start it."""
+    if DISABLE_SYSTEMD:
+        return
     unit = f"""[Unit]
 Description=Qdrant Vector Database
 After=network.target
@@ -1383,6 +1402,8 @@ def install_neo4j(run=subprocess.run) -> None:
 
 def launch_neo4j(run=subprocess.run) -> None:
     """Enable and start the packaged neo4j service."""
+    if DISABLE_SYSTEMD:
+        return
     try:
         run(["systemctl", "enable", "--now", "neo4j"], check=True)
     except Exception:
@@ -1786,6 +1807,8 @@ def launch_updater(run=subprocess.run) -> None:
 
     Skips silently if not running as root (e.g., in tests).
     """
+    if DISABLE_SYSTEMD:
+        return
     try:
         if os.geteuid() != 0:
             return

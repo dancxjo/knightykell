@@ -168,20 +168,24 @@ class VoiceNode(Node):
                 # Piper not installed; log once and skip
                 self.get_logger().error("piper not found on PATH; install piper")
                 continue
-            aplay = subprocess.Popen(
-                [
-                    "aplay",
-                    "-q",
-                    "-r",
-                    str(self.sample_rate),
-                    "-f",
-                    "S16_LE",
-                    "-t",
-                    "raw",
-                    "-",
-                ],
-                stdin=piper.stdout,
-            )
+            # Prefer ALSA device from env; if PULSE_SERVER is set, use pulse plugin
+            aplay_cmd = [
+                "aplay",
+                "-q",
+                "-r",
+                str(self.sample_rate),
+                "-f",
+                "S16_LE",
+                "-t",
+                "raw",
+            ]
+            alsa_dev = os.getenv("ALSA_PCM")
+            if alsa_dev:
+                aplay_cmd += ["-D", alsa_dev]
+            elif os.getenv("PULSE_SERVER"):
+                aplay_cmd += ["-D", "pulse"]
+            aplay_cmd += ["-"]
+            aplay = subprocess.Popen(aplay_cmd, stdin=piper.stdout)
             self._procs = [aplay, piper]
             # Send text to Piper
             try:

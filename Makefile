@@ -1,4 +1,13 @@
-.PHONY: image ubuntu-images test provision deprovision reconcile ros2-dev-image ros2-dev-run compose-up compose-down compose-shell
+.PHONY: image ubuntu-images test provision deprovision reconcile ros2-dev-image ros2-dev-run compose-up compose-down compose-shell compose-up-audio compose-up-pulse compose-shell-pulse compose-provision
+
+# Prefer Docker Compose v2 plugin; fall back to docker-compose v1 if available
+DOCKER_COMPOSE := $(shell if docker compose version >/dev/null 2>&1; then echo "docker compose"; elif docker-compose version >/dev/null 2>&1; then echo "docker-compose"; else echo ""; fi)
+define REQUIRE_COMPOSE
+    @if [ -z "$(DOCKER_COMPOSE)" ]; then \
+        echo "Error: Docker Compose not found. Install the Docker Compose plugin (docker compose) or docker-compose."; \
+        exit 1; \
+    fi
+endef
 
 # Build Raspberry Pi images for hosts defined in hosts.toml.
 # Usage: make image HOSTS="brainstem forebrain" (default builds all)
@@ -43,10 +52,32 @@ ros2-dev-run:
 
 # Docker Compose helpers
 compose-up:
-	@docker compose up -d --build ros2
+	$(REQUIRE_COMPOSE)
+	@$(DOCKER_COMPOSE) up -d --build ros2
 
 compose-down:
-	@docker compose down
+	$(REQUIRE_COMPOSE)
+	@$(DOCKER_COMPOSE) down
 
 compose-shell:
-	@docker compose exec ros2 bash
+	$(REQUIRE_COMPOSE)
+	@$(DOCKER_COMPOSE) exec ros2 bash
+
+# Start audio-enabled service (ALSA passthrough)
+compose-up-audio:
+	$(REQUIRE_COMPOSE)
+	@$(DOCKER_COMPOSE) --profile audio up -d --build ros2-audio
+
+# One-shot provisioning inside the container (no systemd)
+compose-provision:
+	$(REQUIRE_COMPOSE)
+	@$(DOCKER_COMPOSE) --profile provision up --build --abort-on-container-exit ros2-provision
+
+# Start PulseAudio client container (needs host Pulse socket)
+compose-up-pulse:
+	$(REQUIRE_COMPOSE)
+	@$(DOCKER_COMPOSE) --profile pulse up -d --build ros2-pulse
+
+compose-shell-pulse:
+	$(REQUIRE_COMPOSE)
+	@$(DOCKER_COMPOSE) exec ros2-pulse bash

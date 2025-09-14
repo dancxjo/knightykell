@@ -212,6 +212,66 @@ make compose-down
 Notes:
 - Compose uses `network_mode: host` so DDS multicast discovery works on Linux. On Docker Desktop (Mac/Windows), host networking is limited; consider WSL2 or a Linux host for LAN ROS graphs.
 - Set `ROS_DOMAIN_ID` when needed: `ROS_DOMAIN_ID=25 make compose-up` to match a non-default domain.
+
+Audio Passthrough
+-----------------
+
+Enable ALSA device access for voice/ASR via a separate profile:
+
+- Start audio-enabled container:
+
+```
+make compose-up-audio
+```
+
+- Set audio device hints (optional):
+
+```
+ALSA_CARD=1 ALSA_PCM=hw:1,0 make compose-up-audio
+```
+
+This mounts `/dev/snd`, adds the `audio` group, and keeps host networking. Inside the shell, `aplay -l` should list host devices.
+
+PulseAudio (no /dev/snd)
+------------------------
+
+Use PulseAudio over a UNIX socket instead of passing the ALSA devices. This works well on desktop Linux (PulseAudio or PipeWire’s PulseAudio shim).
+
+- Ensure Pulse is running on the host and you have a cookie at `~/.config/pulse/cookie`.
+- Start the Pulse-enabled container:
+
+```
+make compose-up-pulse
+```
+
+- Open a shell:
+
+```
+make compose-shell-pulse
+```
+
+Details:
+- The container mounts `${XDG_RUNTIME_DIR}/pulse/native` as `/tmp/pulse-native` and sets `PULSE_SERVER=unix:/tmp/pulse-native`.
+- The host Pulse cookie is mounted to `/root/.config/pulse/cookie` for authentication.
+- The voice service auto-detects Pulse via `PULSE_SERVER` and uses the ALSA pulse plugin (`aplay -D pulse`).
+
+One-Shot Provisioning
+---------------------
+
+To mirror host provisioning inside the container (without systemd), run the provision profile. It installs the Python venv, dependencies (Piper, Whisper, sounddevice, webrtcvad), and fetches default models. Systemd units are skipped automatically in containers.
+
+- Run provisioning:
+
+```
+make compose-provision
+```
+
+After this, open a shell (`make compose-shell`) and run services directly, e.g.:
+
+```
+python3 scripts/voice_service.py
+python3 scripts/asr_service.py --model tiny
+```
 ```
 
 Autoinstall (forebrain)
