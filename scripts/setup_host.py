@@ -1649,13 +1649,15 @@ def install_pi_hw_packages(run=subprocess.run) -> None:
         pass
     # Always ensure Python deps are installed regardless of apt success.
     # Prefer system Pillow via python3-pil to avoid problematic wheels on aarch64.
-    # Install luma.oled in the venv; include smbus2 for I2C helpers.
+    # Install luma.oled without pulling dependencies (so it doesn't try to fetch Pillow).
     try:
-        _venv_pip_install(["luma.oled", "smbus2"], run)
+        pip = str(VENV_DIR / "bin/pip")
+        run([pip, "install", "--no-deps", "luma.oled"], check=True)
+        run([pip, "install", "smbus2"], check=False)
     except Exception:
-        # As a fallback, try to install Pillow from pip with a conservative pin
+        # As a fallback, try a conservative Pillow pin if imports still fail
         try:
-            _venv_pip_install(["Pillow<=10.3.0"], run)
+            _venv_pip_install(["Pillow<=10.3.0", "luma.oled", "smbus2"], run)
         except Exception:
             pass
     # Best-effort: enable I2C at boot on Raspberry Pi and load module now
