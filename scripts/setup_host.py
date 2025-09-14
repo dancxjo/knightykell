@@ -694,6 +694,24 @@ def ensure_ros2_extra_repos(hostname: str, config: dict, run=subprocess.run) -> 
                     _clone(str(item["url"]), dest, branch)
             except Exception:
                 continue
+    # Best-effort patch: allow MPU6050 driver to pick I2C bus from env
+    try:
+        for p in src.rglob("mpu6050driver.cpp"):
+            try:
+                txt = p.read_text()
+            except Exception:
+                continue
+            if "std::make_unique<MPU6050Sensor>()" in txt:
+                txt = txt.replace(
+                    "std::make_unique<MPU6050Sensor>()",
+                    "std::make_unique<MPU6050Sensor>(std::getenv(\"I2C_BUS\") ? std::atoi(std::getenv(\"I2C_BUS\")) : 1)",
+                )
+                # Ensure <cstdlib> is included
+                if "#include <cstdlib>" not in txt:
+                    txt = txt.replace("#include <memory>", "#include <memory>\n#include <cstdlib>")
+                p.write_text(txt)
+    except Exception:
+        pass
     # Attempt rosdep + build (best-effort)
     try:
         run([
@@ -1021,7 +1039,7 @@ def install_vision_models(run=subprocess.run) -> None:
     if not sface.exists():
         run([
             "curl", "-fsSL", "-o", str(sface),
-            "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx",
+            "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx",
         ], check=True)
 
 
@@ -1033,10 +1051,12 @@ def install_qdrant(run=subprocess.run) -> None:
     """
     import platform
     arch = platform.machine().lower()
-    if "aarch64" in arch or arch == "arm64":
-        target = "aarch64-unknown-linux-gnu"
-    else:
+    # Official Linux tarball is available for x86_64; ARM64 Linux is not provided.
+    if "x86_64" in arch or arch == "amd64":
         target = "x86_64-unknown-linux-gnu"
+    else:
+        # Skip install on unsupported arch; vision falls back to embedded client.
+        return
     ver = os.getenv("QDRANT_VERSION", "v1.7.3")
     url = f"https://github.com/qdrant/qdrant/releases/download/{ver}/qdrant-{target}.tar.gz"
     bin_dir = pathlib.Path("/usr/local/bin")
@@ -1081,6 +1101,9 @@ WantedBy=multi-user.target
 """
     path = SYSTEMD_DIR / "psyche-qdrant.service"
     try:
+        # Only launch if binary exists
+        if not pathlib.Path("/usr/local/bin/qdrant").exists():
+            return
         path.write_text(unit)
         run(["systemctl", "daemon-reload"], check=True)
         run(["systemctl", "enable", "--now", "psyche-qdrant.service"], check=True)
@@ -1189,6 +1212,56 @@ def install_pi_hw_packages(run=subprocess.run) -> None:
             pass
         # Load i2c-dev immediately so /dev/i2c-* is available without reboot
         run(["/bin/bash", "-lc", "/sbin/modprobe i2c-dev || /usr/sbin/modprobe i2c-dev || true"], check=False)
+
+
+def ensure_i2c_bus_overlay(bus: int = 3, pins: str = "pins_4_5") -> None:
+    """Enable an additional I2C bus overlay (e.g., i2c3 on GPIO 4/5).
+
+    Best-effort: writes a dtoverlay line into /boot config if running on Pi.
+    """
+    try:
+        with open("/proc/device-tree/model", "rb") as fh:
+            is_pi = b"Raspberry Pi" in fh.read()
+    except Exception:
+        is_pi = False
+    if not is_pi:
+        return
+    cfg_path = pathlib.Path("/boot/firmware/config.txt")
+    if not cfg_path.exists():
+        cfg_path = pathlib.Path("/boot/config.txt")
+    try:
+        content = cfg_path.read_text() if cfg_path.exists() else ""
+    except Exception:
+        content = ""
+    line = f"dtoverlay=i2c{int(bus)},{pins}"
+    if line not in content:
+        try:
+            cfg_path.write_text((content.rstrip() + "\n" + line + "\n") if content else (line + "\n"))
+        except Exception:
+            pass
+
+
+def ensure_imu_env(hostname: str, config: dict) -> None:
+    """Append I2C bus selection for IMU to /etc/psyche.env if configured.
+
+    Reads ``[hosts.<name>.imu].i2c_bus`` and sets ``I2C_BUS`` env var.
+    Also enables an overlay for bus 3 using GPIO 4/5 pins by default.
+    """
+    bus = None
+    try:
+        bus = int(config.get("hosts", {}).get(hostname, {}).get("imu", {}).get("i2c_bus", 0))
+    except Exception:
+        bus = None
+    if not bus:
+        return
+    if bus == 3:
+        ensure_i2c_bus_overlay(3, "pins_4_5")
+    env_path = pathlib.Path("/etc/psyche.env")
+    try:
+        with env_path.open("a") as fh:
+            fh.write(f"\nI2C_BUS={bus}\n")
+    except Exception:
+        pass
 
 
 def install_asr_packages(run=subprocess.run) -> None:
@@ -1850,6 +1923,11 @@ def main() -> None:
     if any(s in services for s in ("hrs04", "display")):
         print("[setup] installing Pi hardware packages…")
         install_pi_hw_packages()
+    # Apply I2C overlay/env for IMU if configured
+    try:
+        ensure_imu_env(host, cfg)
+    except Exception:
+        pass
     installed: list[str] = []
     for svc in services:
         scfg = get_service_config(host, svc, cfg)

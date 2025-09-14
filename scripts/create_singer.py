@@ -1,68 +1,23 @@
 #!/usr/bin/env python3
-"""Play random tunes on an iRobot Create (1) via OI song banks.
+"""Play random tunes on an iRobot Create via the driver's topics.
 
-This attempts to open the serial ``port`` (default ``/dev/ttyUSB0``) at
-``baud`` (default 57600), program a short random melody into song bank 0,
-and play it. It repeats roughly once a minute. If the serial port is not
-available, it quietly waits and retries.
-
-It opens the port only long enough to send the song, minimizing conflicts
-with other processes. If another process (e.g., a ROS 2 driver) has the
-port open, this will simply skip that cycle.
+Publishes ``create_msgs/DefineSong`` to ``define_song`` and then
+``create_msgs/PlaySong`` to ``play_song`` every ``period`` seconds.
+This avoids touching the serial port directly and works alongside the
+create_robot driver.
 
 Examples:
-    $ python3 scripts/create_singer.py --port /dev/ttyUSB0 --period 60  # doctest: +SKIP
+    $ python3 scripts/create_singer.py --period 60  # doctest: +SKIP
 """
 from __future__ import annotations
 
 import argparse
-import os
 import random
 import time
-import fcntl
-import termios
-import tty
 
-
-def _open_serial(path: str, baud: int = 57600):
-    # Open serial port non-blocking
-    fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
-    # Clear O_NONBLOCK after open
-    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-    fcntl.fcntl(fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
-    attrs = termios.tcgetattr(fd)
-    # input flags
-    attrs[0] = termios.IGNPAR
-    # output flags
-    attrs[1] = 0
-    # control flags: 8N1, enable receiver, local mode
-    attrs[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
-    # local flags
-    attrs[3] = 0
-    # baud
-    speed_map = {
-        57600: termios.B57600,
-        115200: termios.B115200,
-        19200: termios.B19200,
-        38400: termios.B38400,
-    }
-    speed = speed_map.get(int(baud), termios.B57600)
-    termios.cfsetispeed(attrs, speed)
-    termios.cfsetospeed(attrs, speed)
-    # read timeout
-    attrs[6][termios.VMIN] = 0
-    attrs[6][termios.VTIME] = 1
-    termios.tcsetattr(fd, termios.TCSANOW, attrs)
-    return fd
-
-
-def _write(fd: int, data: bytes) -> None:
-    os.write(fd, data)
-    os.fsync(fd)
-
-
-def _oi(bytes_list):
-    return bytes(bytes_list)
+import rclpy
+from rclpy.node import Node
+from create_msgs.msg import DefineSong, PlaySong
 
 
 def _melody() -> list[tuple[int, int]]:
@@ -81,55 +36,58 @@ def _melody() -> list[tuple[int, int]]:
     return out
 
 
-def _program_and_play(fd: int, song_id: int = 0) -> None:
-    # Start (128), Safe (131)
-    _write(fd, _oi([128]))
-    time.sleep(0.05)
-    _write(fd, _oi([131]))
-    time.sleep(0.05)
-    # Build song bytes: [140, id, length, n1, d1, n2, d2, ...]
-    melody = _melody()
-    pairs = []
-    for n, d in melody[:16]:  # max 16 notes per song
-        # Clamp to OI ranges
-        n = max(31, min(127, int(n)))
-        d = max(1, min(255, int(d)))
-        pairs.extend([n, d])
-    song = [140, song_id, len(pairs) // 2] + pairs
-    _write(fd, _oi(song))
-    time.sleep(0.02)
-    # Play song (141, id)
-    _write(fd, _oi([141, song_id]))
+class Singer(Node):
+    def __init__(self, period: float = 60.0, song_id: int = 0) -> None:
+        super().__init__("create_singer")
+        self._pub_def = self.create_publisher(DefineSong, "define_song", 10)
+        self._pub_play = self.create_publisher(PlaySong, "play_song", 10)
+        self._song_id = int(song_id) % 4
+        self._period = float(period)
+        self._last = 0.0
+        self.create_timer(0.5, self._tick)
+
+    def _tick(self) -> None:
+        now = time.monotonic()
+        if now - self._last < self._period:
+            return
+        self._last = now
+        mel = _melody()
+        notes = []
+        durs = []
+        for n, d in mel[:16]:
+            notes.append(int(max(31, min(127, n))))
+            # convert 1/64th tick d to seconds (e.g., 8 -> 0.125s)
+            durs.append(max(1, int(d)) / 64.0)
+        msg = DefineSong()
+        msg.song = self._song_id
+        msg.length = min(16, len(notes))
+        msg.notes = notes[: msg.length]
+        msg.durations = durs[: msg.length]
+        self._pub_def.publish(msg)
+        play = PlaySong()
+        play.song = self._song_id
+        # slight delay to ensure driver defines first
+        def _later():
+            self._pub_play.publish(play)
+        self.create_timer(0.2, _later)
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--port", default=os.getenv("CREATE_PORT", "/dev/ttyUSB0"))
-    p.add_argument("--baud", type=int, default=int(os.getenv("CREATE_BAUD", "57600")))
-    p.add_argument("--period", type=float, default=60.0, help="seconds between songs")
+    p.add_argument("--period", type=float, default=60.0)
+    p.add_argument("--song-id", type=int, default=0)
     ns = p.parse_args(argv)
-    last = 0.0
-    while True:
-        now = time.monotonic()
-        if now - last >= ns.period:
-            last = now
-            try:
-                fd = _open_serial(ns.port, ns.baud)
-            except Exception:
-                fd = None
-            if fd is not None:
-                try:
-                    _program_and_play(fd, song_id=0)
-                except Exception:
-                    pass
-                finally:
-                    try:
-                        os.close(fd)
-                    except Exception:
-                        pass
-        time.sleep(0.5)
+    rclpy.init()
+    node = Singer(period=ns.period, song_id=ns.song_id)
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+    return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
