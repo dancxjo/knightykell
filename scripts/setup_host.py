@@ -72,6 +72,33 @@ def _infer_repo_branch(url: str) -> str | None:
     return None
 
 
+def _has_nvidia() -> bool:
+    """Return True if an NVIDIA GPU/driver appears present.
+
+    Checks for ``nvidia-smi`` or driver files under ``/proc/driver/nvidia``.
+
+    Examples:
+        >>> isinstance(_has_nvidia(), bool)
+        True
+    """
+    try:
+        res = subprocess.run(["nvidia-smi"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if res.returncode == 0:
+            return True
+    except Exception:
+        pass
+    try:
+        if pathlib.Path("/proc/driver/nvidia/version").exists():
+            return True
+    except Exception:
+        pass
+    try:
+        out = subprocess.run(["bash", "-lc", "lspci -nnk | grep -i nvidia"], text=True, capture_output=True)
+        return bool(out.stdout.strip())
+    except Exception:
+        return False
+
+
 def load_config(path: pathlib.Path | str = CONFIG_PATH) -> dict:
     """Load TOML configuration.
 
@@ -1764,6 +1791,15 @@ def install_llama_cpp(run=subprocess.run) -> None:
         run(["apt-get", "install", "-y", "cmake", "build-essential"], check=True)
     except Exception:
         pass
+    pip = str(VENV_DIR / "bin/pip")
+    # Prefer CUDA wheel when NVIDIA is present; fall back to generic
+    if _has_nvidia():
+        try:
+            run([pip, "install", "llama-cpp-python-cu121"], check=True)
+            return
+        except Exception:
+            # Fall back to default package if CUDA-specific wheel is unavailable
+            pass
     _venv_pip_install(["llama-cpp-python"], run)
 
 
@@ -1782,18 +1818,6 @@ def install_hf_chat(run=subprocess.run) -> None:
     _venv_pip_install(["transformers>=4.41", "safetensors", "sentencepiece"], run)
     # Install torch suitable for the environment. Prefer CUDA wheels when NVIDIA GPU is present.
     pip = str(VENV_DIR / "bin/pip")
-    def _has_nvidia() -> bool:
-        try:
-            # nvidia-smi is available only when a driver is present
-            res = subprocess.run(["nvidia-smi"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if res.returncode == 0:
-                return True
-        except Exception:
-            pass
-        try:
-            return pathlib.Path("/proc/driver/nvidia/version").exists()
-        except Exception:
-            return False
     try:
         if _has_nvidia():
             # Use PyTorch CUDA 12.1 wheels (broadly compatible on recent drivers)
@@ -2101,6 +2125,7 @@ def install_host_tools() -> None:
     """Install small host CLI helpers for easy reprovisioning.
 
     - ``/usr/local/bin/psyche-provision``: reruns setup with optional PSYCHE_SRC
+    - ``/usr/bin/psyche-update``: fetches and runs install.sh from GitHub
     """
     try:
         bin_dir = pathlib.Path("/usr/local/bin")
@@ -2120,6 +2145,30 @@ fi
         prov.write_text(script)
         try:
             os.chmod(prov, 0o755)
+        except Exception:
+            pass
+        # Global updater entrypoint under /usr/bin per request
+        upd = pathlib.Path("/usr/bin/psyche-update")
+        owner = os.getenv("PSYCHE_OWNER", "dancxjo")
+        repo = os.getenv("PSYCHE_REPO", "knightykell")
+        branch = os.getenv("PSYCHE_BRANCH", "main")
+        updater = f"""#!/usr/bin/env bash
+set -euo pipefail
+OWNER="${{PSYCHE_OWNER:-{owner}}}"
+REPO="${{PSYCHE_REPO:-{repo}}}"
+BRANCH="${{PSYCHE_BRANCH:-{branch}}}"
+URL="https://raw.githubusercontent.com/$OWNER/$REPO/refs/heads/$BRANCH/scripts/install.sh"
+if [ "$EUID" -ne 0 ]; then
+  curl -fsSL "$URL" | sudo bash -s -- -o "$OWNER" -r "$REPO" -b "$BRANCH"
+else
+  curl -fsSL "$URL" | bash -s -- -o "$OWNER" -r "$REPO" -b "$BRANCH"
+fi
+"""
+        # Ensure parent dir exists and write script
+        upd.parent.mkdir(parents=True, exist_ok=True)
+        upd.write_text(updater)
+        try:
+            os.chmod(upd, 0o755)
         except Exception:
             pass
     except PermissionError:
@@ -2437,6 +2486,12 @@ def main() -> None:
     # Disable any leftover psyche-* units not in this host's services
     disable_absent_services(services)
     ensure_service_user()
+    # If an NVIDIA GPU is present, install drivers/CUDA early
+    try:
+        print("[setup] checking for NVIDIA GPU + installing drivers/CUDA if present…")
+        install_cuda_if_available()
+    except Exception:
+        pass
     # Install ROS first so colcon and env are available for builds
     print("[setup] installing ROS 2 base…")
     install_ros2()
