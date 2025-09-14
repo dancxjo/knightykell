@@ -1,4 +1,4 @@
-.PHONY: image ubuntu-images test provision deprovision
+.PHONY: image ubuntu-images test provision deprovision reconcile
 
 # Build Raspberry Pi images for hosts defined in hosts.toml.
 # Usage: make image HOSTS="brainstem forebrain" (default builds all)
@@ -20,3 +20,8 @@ provision:
 # Remove installed services, env, and runtime files from the host.
 deprovision:
 	@sudo -E python3 scripts/deprovision.py
+
+# Disable any previously installed psyche-* services that are not
+# configured for this host according to hosts.toml
+reconcile:
+	@sudo -E python3 scripts/reconcile_services.py
