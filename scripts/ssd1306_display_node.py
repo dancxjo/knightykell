@@ -39,6 +39,9 @@ class _Page:
     lines: deque[str] | None = None  # for terminal mode
     vfirst: int = 0  # first visible wrapped line (body vertical scroll)
     vpix: int = 0    # pixel offset within a line for smooth vertical scroll
+    looped: bool = False  # whether a full vertical scroll cycle completed
+    vfirst: int = 0  # first visible wrapped line (body vertical scroll)
+    vpix: int = 0    # pixel offset within a line for smooth vertical scroll
 
 
 class DisplayNode(Node):
@@ -50,7 +53,7 @@ class DisplayNode(Node):
 
     def __init__(self, topics: list[str], *, driver: str, width: int | None,
                  height: int | None, port: int, address: int,
-                 page_seconds: float = 6.0, tick_interval: float = 0.10,
+                 page_seconds: float = 8.0, tick_interval: float = 0.10,
                  extra: str = "") -> None:
         super().__init__("display")
         if not HAS_LUMA:
@@ -119,6 +122,9 @@ class DisplayNode(Node):
                     else:
                         p.text = msg.data
                         p.offset = 0
+                        p.vfirst = 0
+                        p.vpix = 0
+                        p.looped = False
                     break
             self._render()
         return _cb
@@ -141,10 +147,17 @@ class DisplayNode(Node):
                 cur.vpix += 1
                 if cur.vpix >= body_line_h:
                     cur.vpix = 0
-                    cur.vfirst = (cur.vfirst + 1) % (len(wrapped) - max_lines + 1)
+                    # Add gap so text scrolls fully off with some blank space
+                    gap_lines = max_lines + 2
+                    total_positions = (len(wrapped) - max_lines) + gap_lines
+                    cur.vfirst += 1
+                    if cur.vfirst >= total_positions:
+                        cur.vfirst = 0
+                        cur.looped = True
             else:
                 cur.vpix = 0
                 cur.vfirst = 0
+                cur.looped = True  # nothing to scroll implies immediate cycle
         # Bottom status ticker offsets
         status = self._status_text()
         if self._extra_text:
@@ -154,9 +167,18 @@ class DisplayNode(Node):
             self._status_off = (self._status_off + 2) % (stw + 20)
         else:
             self._status_off = 0
+        # Switch pages more slowly: wait until a full scroll cycle completes
+        # and also respect the minimum dwell time.
         if now - self._last_switch >= self._page_seconds:
-            self._page_index = (self._page_index + 1) % len(self._pages)
-            self._last_switch = now
+            should_switch = True
+            if cur.mode == "ticker":
+                # Only switch after content has scrolled off (looped)
+                should_switch = cur.looped
+            if should_switch:
+                self._page_index = (self._page_index + 1) % len(self._pages)
+                # Reset next page cycle marker but not offsets (computed live)
+                self._pages[self._page_index].looped = False
+                self._last_switch = now
         self._render()
 
     def _splash(self, text: str) -> None:

@@ -823,7 +823,7 @@ def launch_display(cfg: dict, run=subprocess.run) -> None:
     height = str(cfg.get("height", 64))
     port = str(cfg.get("port", 1))
     address = str(cfg.get("address", "0x3C"))
-    page_seconds = str(cfg.get("page_seconds", 6.0))
+    page_seconds = str(cfg.get("page_seconds", 8.0))
     tick_interval = str(cfg.get("tick_interval", 0.10))
     cmd = [
         str(VENV_DIR / "bin/python"),
