@@ -427,6 +427,40 @@ def stop_old_services(services: list[str], run=subprocess.run) -> None:
             pass
 
 
+def disable_absent_services(services: list[str], run=subprocess.run) -> None:
+    """Disable and stop any previously installed psyche-* services not in list.
+
+    This reconciles the machine's running/enabled units with the current
+    hosts.toml so that removed services (e.g., "chat") do not keep running.
+
+    Preserves helper units like ``psyche-update.timer``.
+    """
+    desired = set(services)
+    try:
+        # List all installed psyche-*.service unit files
+        cmd = "systemctl list-unit-files 'psyche-*.service' --no-legend | awk '{print $1}'"
+        out = subprocess.run(["bash", "-lc", cmd], text=True, capture_output=True, check=False).stdout
+    except Exception:
+        out = ""
+    units = [ln.strip() for ln in out.splitlines() if ln.strip()]
+    for unit in units:
+        # psyche-<name>.service -> <name>
+        base = unit.removeprefix("psyche-").removesuffix(".service")
+        if not base or base == "update":
+            # Keep updater infrastructure intact
+            continue
+        if base not in desired:
+            try:
+                run(["systemctl", "disable", "--now", unit], check=False)
+            except Exception:
+                pass
+    # Best-effort daemon reload
+    try:
+        run(["systemctl", "daemon-reload"], check=False)
+    except Exception:
+        pass
+
+
 def ensure_shell_env() -> None:
     """Ensure interactive shells source ROS and workspace environments.
 
@@ -1445,6 +1479,8 @@ def main() -> None:
     print("[setup] starting provisioning for:", host, services)
     # Stop any previously running services first
     stop_old_services(services)
+    # Disable any leftover psyche-* units not in this host's services
+    disable_absent_services(services)
     ensure_service_user()
     # Install ROS first so colcon and env are available for builds
     print("[setup] installing ROS 2 base…")
