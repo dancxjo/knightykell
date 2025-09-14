@@ -141,6 +141,7 @@ class ChatNode(Node):
         super().__init__("chat")
         self._messages: List[Message] = []
         self._pending: List[str] = []
+        self._last_error: str | None = None
         prompt = os.getenv("CHAT_PROMPT")
         if prompt:
             self._messages.append({"role": "system", "content": prompt})
@@ -153,8 +154,15 @@ class ChatNode(Node):
             self.get_logger().warning("chat: backend unavailable; set OLLAMA_MODEL or LLAMA_MODEL_PATH")
         self._pub_voice = self.create_publisher(String, "voice", 10)
         self._pub_chat = self.create_publisher(String, "chat", 10)
+        self._pub_status = self.create_publisher(String, "status/chat", 10)
         self.create_subscription(String, "asr", self._on_asr, 10)
         self.create_subscription(String, "voice_done", self._on_voice_done, 10)
+        # Periodic status heartbeat
+        try:
+            interval = float(os.getenv("CHAT_STATUS_INTERVAL", "10"))
+        except Exception:
+            interval = 10.0
+        self.create_timer(interval, self._publish_status)
 
     def _on_asr(self, msg: String) -> None:
         text = (msg.data or "").strip()
@@ -164,10 +172,12 @@ class ChatNode(Node):
         self._messages.append({"role": "user", "content": text})
         if not self._backend:
             self.get_logger().warning("chat: backend unavailable; skipping response")
+            self._last_error = "backend unavailable"
             return
         try:
             reply = self._backend.complete(self._messages)
         except Exception as e:
+            self._last_error = str(e)
             reply = f"(llm error: {e})"
         reply = (reply or "").strip()
         if not reply:
@@ -194,6 +204,25 @@ class ChatNode(Node):
             # Commit to conversation log in order of completion
             self._messages.append({"role": "assistant", "content": text})
             del self._pending[idx]
+
+    def _publish_status(self) -> None:
+        """Publish a lightweight status line to ``status/chat``.
+
+        Includes backend type, model hint (if any), count of pending
+        voice announcements, and the last error message (if any).
+        """
+        backend = (
+            "ollama" if isinstance(self._backend, _OllamaBackend) else
+            "llama.cpp" if isinstance(self._backend, _LlamaCppBackend) else
+            "unavailable"
+        )
+        model = ""
+        if isinstance(self._backend, _OllamaBackend):
+            model = getattr(self._backend, "model", "")
+        msg = String()
+        err = self._last_error or ""
+        msg.data = f"backend={backend} model={model} pending={len(self._pending)} last_error={err}"
+        self._pub_status.publish(msg)
 
 
 def main() -> None:
