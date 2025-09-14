@@ -215,7 +215,7 @@ class ChatNode(Node):
         # Determine URL (allow override via LLAMA_GGUF_URL)
         url = os.getenv(
             "LLAMA_GGUF_URL",
-            "https://huggingface.co/TheBloke/Meta-Llama-3.2-1B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-1B-Instruct.Q4_K_M.gguf?download=true",
+            "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf",
         )
         fname = url.split("/")[-1].split("?")[0] or "model.gguf"
         out = models_dir / fname

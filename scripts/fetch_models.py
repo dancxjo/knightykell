@@ -9,14 +9,14 @@ Destinations (override via env/flags):
 - Whisper cache: ``$XDG_CACHE_HOME`` or ``/opt/psyche/assets_seed/cache``
 
 Examples:
-    Fetch defaults (Llama 3.2 1B Instruct GGUF + Whisper tiny)::
+    Fetch defaults (Phi-3.5 mini Instruct GGUF + Whisper tiny)::
 
         $ python3 fetch_models.py --defaults  # doctest: +SKIP
 
     Fetch specific models::
 
         $ python3 fetch_models.py \
-            --llama llama32-1b-instruct-q4_k_m \
+            --llama phi-3.5-mini-instruct-q4_k_m \
             --whisper tiny base  # doctest: +SKIP
 """
 from __future__ import annotations
@@ -29,8 +29,8 @@ from typing import Iterable
 
 
 KNOWN_LLAMA: dict[str, str] = {
-    # Llama 3.2 1B Instruct (small) — Q4_K_M GGUF
-    "llama32-1b-instruct-q4_k_m": "https://huggingface.co/TheBloke/Meta-Llama-3.2-1B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-1B-Instruct.Q4_K_M.gguf?download=true",
+    # Phi-3.5 mini Instruct — Q4_K_M GGUF (open)
+    "phi-3.5-mini-instruct-q4_k_m": "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf",
     # Legacy TinyLlama for compatibility
     "tinyllama-q4_k_m": "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf?download=true",
 }
@@ -72,7 +72,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Fetch Llama/Whisper models")
     parser.add_argument("--llama", nargs="*", default=[], help="Llama GGUF URLs or known names")
     parser.add_argument("--whisper", nargs="*", default=[], help="Whisper model names, e.g. tiny base small")
-    parser.add_argument("--defaults", action="store_true", help="Fetch Llama 3.2 1B Instruct Q4_K_M and Whisper tiny")
+    parser.add_argument("--defaults", action="store_true", help="Fetch Phi-3.5 mini Instruct Q4_K_M and Whisper tiny")
     parser.add_argument("--llama-dir", default=os.getenv("LLAMA_MODELS_DIR", "/opt/psyche/assets_seed/models/llama"))
     parser.add_argument("--cache-dir", default=os.getenv("XDG_CACHE_HOME", "/opt/psyche/assets_seed/cache"))
     args = parser.parse_args()
@@ -80,7 +80,7 @@ def main() -> None:
     llama_items = list(args.llama)
     whisper_items = list(args.whisper)
     if args.defaults:
-        llama_items.append("llama32-1b-instruct-q4_k_m")
+        llama_items.append("phi-3.5-mini-instruct-q4_k_m")
         whisper_items.append("tiny")
 
     for item in llama_items:
