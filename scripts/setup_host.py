@@ -170,6 +170,7 @@ def stage_runtime_assets() -> None:
         "notify_to_voice.py",
         "fortune_notify.py",
         "vision_service.py",
+        "sensor_status.py",
         "oled_splash.py",
         "oled_clear.py",
         "fetch_models.py",
@@ -1162,7 +1163,7 @@ def install_pi_hw_packages(run=subprocess.run) -> None:
     - Venv: luma.oled, Pillow
     """
     try:
-        run(["apt-get", "install", "-y", "python3-gpiozero", "python3-lgpio", "i2c-tools"], check=True)
+        run(["apt-get", "install", "-y", "python3-gpiozero", "python3-lgpio", "i2c-tools", "libi2c-dev"], check=True)
     except Exception:
         return
     # Ensure service user can access GPIO and I2C devices
@@ -1611,6 +1612,42 @@ def launch_create(cfg: dict | None = None, run=subprocess.run) -> None:
     install_service_unit("create", cmd, run)
 
 
+def launch_lidar(cfg: dict | None = None, run=subprocess.run) -> None:
+    """Install systemd unit for HLS LFCD LDS LiDAR.
+
+    Config under ``[hosts.<name>.lidar]``:
+    - ``port``: serial device (default ``/dev/ttyUSB0``)
+    - ``frame_id``: TF frame for laser (default ``laser``)
+    """
+    cfg = cfg or {}
+    port = str(cfg.get("port", "/dev/ttyUSB0"))
+    frame = str(cfg.get("frame_id", "laser"))
+    cmd = [
+        "ros2", "launch", "hls_lfcd_lds_driver", "hlds_laser.launch.py",
+        f"port:={port}", f"frame_id:={frame}",
+    ]
+    install_service_unit("lidar", cmd, run)
+
+
+def launch_imu(cfg: dict | None = None, run=subprocess.run) -> None:
+    """Install systemd unit for MPU6050 IMU driver.
+
+    Uses the package ``mpu6050driver`` and default params.
+    """
+    cfg = cfg or {}
+    cmd = ["ros2", "launch", "mpu6050driver", "mpu6050driver_launch.py"]
+    freq = cfg.get("frequency")
+    if freq is not None:
+        cmd += ["--ros-args", "-p", f"frequency:={freq}"]
+    install_service_unit("imu", cmd, run)
+
+
+def launch_sensors_status(run=subprocess.run) -> None:
+    """Install systemd unit for sensor status summarizer."""
+    cmd = [str(VENV_DIR / "bin/python"), script_path("sensor_status.py")]
+    install_service_unit("sensors", cmd, run)
+
+
 def launch_vision(cfg: dict | None = None, run=subprocess.run) -> None:
     """Install systemd unit for the USB webcam vision service.
 
@@ -1854,6 +1891,18 @@ def main() -> None:
             ensure_db_env()
             launch_neo4j()
             installed.append("neo4j")
+        elif svc == "lidar":
+            print("[setup] launching LiDAR service…")
+            launch_lidar(scfg)
+            installed.append("lidar")
+        elif svc == "imu":
+            print("[setup] launching IMU service…")
+            launch_imu(scfg)
+            installed.append("imu")
+        elif svc == "sensors":
+            print("[setup] launching sensor status service…")
+            launch_sensors_status()
+            installed.append("sensors")
         elif svc == "chat":
             print("[setup] launching chat service…")
             launch_chat()

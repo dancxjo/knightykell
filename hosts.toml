@@ -10,9 +10,9 @@ echo_pin = 27
 [hosts.cerebellum]
 image = "ubuntu"
 model="pi5"
-services = ["voice", "logticker", "display", "topics", "notify", "fortune", "vision", "qdrant", "neo4j", "asr", "create", "singer"]
+services = ["voice", "logticker", "display", "topics", "notify", "fortune", "vision", "qdrant", "neo4j", "lidar", "imu", "sensors", "asr", "create", "singer"]
 [hosts.cerebellum.display]
-topics = ["/logs", "/topics", "/status/notify", "/vision/faces", "/vision/objects", "/vision/face_id"]
+topics = ["/logs", "/topics", "/status/notify", "/status/scan", "/status/imu", "/vision/faces", "/vision/objects", "/vision/face_id"]
 driver = "sh1106"
 width = 128
 height = 64
@@ -63,3 +63,17 @@ device = 0
 width = 640
 height = 480
 fps = 5
+
+[hosts.cerebellum.lidar]
+port = "/dev/ttyUSB0"
+frame_id = "laser"
+
+[hosts.cerebellum.imu]
+# Default params in package; ensure I2C enabled (install_pi_hw_packages)
+frequency = 100
+
+[hosts.cerebellum.ros2]
+repos = [
+  { url = "https://github.com/ROBOTIS-GIT/hls_lfcd_lds_driver.git", branch = "jazzy" },
+  { url = "https://github.com/hiwad-aziz/ros2_mpu6050_driver.git" },
+]
