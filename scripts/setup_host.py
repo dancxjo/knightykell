@@ -2045,8 +2045,11 @@ def ensure_python_env(run=subprocess.run) -> None:
         return
     try:
         run(["sudo", "-u", SERVICE_USER, "python3", "-m", "venv", "--system-site-packages", str(VENV_DIR)], check=True)
-        # Install uv into the service user's ~/.local/bin (best effort)
-        run(["sudo", "-u", SERVICE_USER, "bash", "-lc", "curl -LsSf https://astral.sh/uv/install.sh | sh"], check=False)
+        # Install uv into the service user's ~/.local/bin if not already present (best effort)
+        run([
+            "sudo", "-u", SERVICE_USER, "bash", "-lc",
+            "command -v uv >/dev/null 2>&1 || [ -x ~/.local/bin/uv ] || curl -LsSf https://astral.sh/uv/install.sh | sh",
+        ], check=False)
     except Exception:
         # Non-fatal if venv setup fails here; services may still run using system Python
         pass
