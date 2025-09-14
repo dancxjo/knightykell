@@ -168,6 +168,7 @@ def stage_runtime_assets() -> None:
         "retry_exec.py",
         "create_singer.py",
         "notify_to_voice.py",
+        "fortune_notify.py",
         "oled_splash.py",
         "oled_clear.py",
         "fetch_models.py",
@@ -1385,6 +1386,21 @@ def launch_notify(run=subprocess.run) -> None:
     install_service_unit("notify", cmd, run)
 
 
+def launch_fortune(cfg: dict | None = None, run=subprocess.run) -> None:
+    """Install systemd unit for periodic fortunes.
+
+    Examples:
+        >>> launch_fortune({'period': 60}, lambda cmd, check: None)  # doctest: +SKIP
+    """
+    cfg = cfg or {}
+    period = str(cfg.get("period", 300))
+    do_notify = cfg.get("notify_send", False)
+    cmd = [str(VENV_DIR / "bin/python"), script_path("fortune_notify.py"), "--period", period]
+    if do_notify:
+        cmd.append("--notify-send")
+    install_service_unit("fortune", cmd, run)
+
+
         
 
 
@@ -1640,6 +1656,10 @@ def main() -> None:
             print("[setup] launching notification bridge…")
             launch_notify()
             installed.append("notify")
+        elif svc == "fortune":
+            print("[setup] launching fortune notifier…")
+            launch_fortune(scfg)
+            installed.append("fortune")
         elif svc == "chat":
             print("[setup] launching chat service…")
             launch_chat()

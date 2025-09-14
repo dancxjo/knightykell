@@ -10,7 +10,7 @@ echo_pin = 27
 [hosts.cerebellum]
 image = "ubuntu"
 model="pi5"
-services = ["voice", "logticker", "display", "topics", "notify", "asr", "create", "singer"]
+services = ["voice", "logticker", "display", "topics", "notify", "fortune", "asr", "create", "singer"]
 [hosts.cerebellum.display]
 topics = ["/logs", "/topics", "/status/notify"]
 driver = "sh1106"
@@ -37,6 +37,11 @@ params = { dev = "/dev/ttyUSB0" }
 port = "/dev/ttyUSB0"  # reuse create port
 baud = 57600
 period = 60
+
+[hosts.cerebellum.fortune]
+# Emit a fortune every 5 minutes and also show a desktop notification if available
+period = 300
+notify_send = true
 
 [hosts.forebrain]
 services = ["voice", "logticker", "chat", "asr_long"]
