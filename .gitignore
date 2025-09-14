@@ -11,3 +11,4 @@ __pycache__/
 *.pyc
 *.pyo
 scripts/__pycache__/setup_host.cpython-313.pyc
+/assets

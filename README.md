@@ -53,12 +53,6 @@ Configuration
 [hosts]
 [hosts.brainstem]
 services = ["voice", "logticker", "logsummarizer", "hrs04", "display", "asr"]
-[hosts.brainstem.assets]
-# NVMe data volume for large models and caches
-label = "PSYCHE_DATA"        # filesystem label to mount (recommended)
-mount = "/mnt/psyche"        # mount point (created if missing)
-# device = "/dev/nvme0n1p1"  # optional explicit device path
-# format_if_empty = true      # only if you want auto-mkfs when blank
 [hosts.brainstem.hrs04]
 trig_pin = 17
 echo_pin = 27
@@ -92,21 +86,16 @@ Services
 - `psyche-hrs04.service`: Ultrasonic sensor node (pins from host config)
 - `psyche-display.service`: SSD1306 OLED topic display
 
-Assets storage (NVMe)
----------------------
+Assets storage
+--------------
 
-Large assets (GGUF LLMs, Piper voices, Whisper caches) live under a single mount:
+Large assets (GGUF LLMs, Piper voices, Whisper caches) default to fixed paths:
 
-- Recommended mount: `/mnt/psyche` with filesystem label `PSYCHE_DATA`.
-- Provisioning auto-creates `models/llama`, `piper/voices`, and `cache` under this mount and writes env defaults:
-  - `LLAMA_MODELS_DIR=/mnt/psyche/models/llama`
-  - `PIPER_VOICES_DIR=/mnt/psyche/piper/voices`
-  - `XDG_CACHE_HOME=/mnt/psyche/cache` (Whisper uses this for models)
+- Llama GGUFs: `/opt/llama/models` (env: `LLAMA_MODELS_DIR`)
+- Piper voices: `/opt/piper/voices` (env: `PIPER_VOICES_DIR`)
+- Caches (Whisper, HF): `/opt/psyche/cache` (env: `XDG_CACHE_HOME`)
 
-Headless setup tips (Raspberry Pi 5):
-- Pre-format the NVMe partition as ext4 and label it `PSYCHE_DATA`.
-- The provisioner will add an `/etc/fstab` entry and mount it automatically.
-- Optionally set `[hosts.<name>.assets.device]` and `format_if_empty = true` to allow first-boot formatting when blank.
+If you seed assets during image build (via `ASSETS_SEED_DIR`), they are copied into these locations on first boot.
 
 Log summarization
 -----------------
@@ -166,7 +155,8 @@ Build fully staged Ubuntu Server images for Pi models using chroot to pre-seed a
 
 - Build all Ubuntu-marked hosts: `make ubuntu-images`
 - Filter: `make ubuntu-images HOSTS="brainstem cerebellum"`
-- Optional pre-seed assets into the image (copied to `/opt/psyche/assets_seed` and moved to NVMe at first boot):
+- By default, the builder chroots into the image and provisions heavy packages (ROS 2, Python venv, deps). Disable with `CHROOT_PROVISION=0`.
+- Optional pre-seed assets into the image (copied to `/opt/psyche/assets_seed` and staged on first boot):
 
 ```
 ASSETS_SEED_DIR=/path/to/assets \
@@ -178,13 +168,12 @@ Expected `ASSETS_SEED_DIR` layout (any subset is fine):
 - `piper/voices/*.onnx` and `*.onnx.json`
 - `cache/` (Whisper models live under `XDG_CACHE_HOME`)
 
-Advanced: pre-install a few packages in chroot (best-effort, needs `qemu-aarch64-static` on x86 build hosts):
-
-```
-CHROOT_APT=1 make ubuntu-images HOSTS="brainstem"
-```
-
-The image includes `firstboot` service that runs full provisioning on first boot; pre-seeded assets are moved under the NVMe mount (`/mnt/psyche`) automatically.
+Internals:
+- The builder mounts the image partitions, stages `/opt/psyche`, and runs `/opt/psyche/provision_image.py <host>` inside chroot to install:
+  - ROS 2 base (Jazzy), zenoh, Python venv
+  - Voice/ASR deps (Piper, Whisper, sounddevice, webrtcvad)
+  - llama-cpp-python for log summarizer
+- On first boot, `firstboot` completes host-specific setup (env, units, any remaining installs). Pre-seeded assets are copied into `/opt/llama/models`, `/opt/piper/voices`, and `/opt/psyche/cache`.
 
 Default embedded models and fetching helpers
 -------------------------------------------
@@ -192,7 +181,7 @@ Default embedded models and fetching helpers
 - Embedded defaults during provisioning:
   - LLM: TinyLlama 1.1B Chat Q4_K_M (`tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf`) → `$LLAMA_MODELS_DIR`
   - ASR: Whisper `tiny` model warmed into `$XDG_CACHE_HOME`
-  - Both happen automatically at provisioning time (best-effort, network required). If assets are baked into the image via `ASSETS_SEED_DIR`, they will be moved to NVMe on first boot instead.
+  - Both happen automatically at provisioning time (best-effort, network required). If assets are baked into the image via `ASSETS_SEED_DIR`, they will be copied into the fixed asset paths on first boot.
 
 - Fetch other models via helper:
   - Script: `scripts/fetch_models.py`
@@ -202,9 +191,9 @@ Default embedded models and fetching helpers
 # Fetch defaults into seed layout (useful before image build)
 python3 scripts/fetch_models.py --defaults
 
-# Fetch Whisper tiny+base into /mnt/psyche cache, and TinyLlama GGUF into models dir
-XDG_CACHE_HOME=/mnt/psyche/cache \
-LLAMA_MODELS_DIR=/mnt/psyche/models/llama \
+# Fetch Whisper tiny+base into system cache path, and TinyLlama GGUF into models dir
+XDG_CACHE_HOME=/opt/psyche/cache \
+LLAMA_MODELS_DIR=/opt/llama/models \
 python3 scripts/fetch_models.py --whisper tiny base --llama tinyllama-q4_k_m
 ```
 

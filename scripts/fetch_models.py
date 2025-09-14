@@ -2,7 +2,7 @@
 """Fetch Whisper and Llama models into the standard assets layout.
 
 Defaults to the PSYCHE assets seed layout so results can be baked into an
-image and later moved to the NVMe mount on first boot.
+image and later copied into fixed asset paths on first boot.
 
 Destinations (override via env/flags):
 - Llama: ``$LLAMA_MODELS_DIR`` or ``/opt/psyche/assets_seed/models/llama``
@@ -88,4 +88,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

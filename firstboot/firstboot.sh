@@ -4,6 +4,11 @@ LOG=/var/log/psyche-firstboot.log
 exec >>"$LOG" 2>&1
 echo "[firstboot] $(date -Is) starting"
 
+# Try to display early logs on OLED (best-effort; may fail before I2C enabled)
+if [ -x /usr/bin/python3 ] && [ -f /opt/psyche/oled_log.py ]; then
+    ( tail -n 20 -f "$LOG" | python3 /opt/psyche/oled_log.py ) &
+fi
+
 # Enable I2C if not already enabled
 NEED_REBOOT=0
 if grep -qi 'raspberry pi' /proc/device-tree/model 2>/dev/null; then
@@ -27,11 +32,8 @@ if [ "$NEED_REBOOT" -eq 1 ]; then
 	exit 0
 fi
 
-# Start OLED log display in background (best-effort)
-if [ -x /usr/bin/python3 ] && [ -f /opt/psyche/oled_log.py ]; then
-	tail -n 20 -f "$LOG" | python3 /opt/psyche/oled_log.py &
-fi
+echo "[firstboot] launching provisioning"
 
-python3 /opt/psyche/setup_host.py
+python3 /opt/psyche/setup_host.py || echo "[firstboot] setup_host.py exited with status $?" >&2
 systemctl disable psyche-firstboot.service || true
 echo "[firstboot] done at $(date -Is)"

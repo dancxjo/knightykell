@@ -26,8 +26,6 @@ REPO_DIR = HOME_DIR / "psyche"
 WORKSPACE = HOME_DIR / "ros2_ws"
 SYSTEMD_DIR = pathlib.Path("/etc/systemd/system")
 VENV_DIR = HOME_DIR / ".venv"
-ASSETS_DEFAULT_LABEL = "PSYCHE_DATA"
-ASSETS_DEFAULT_MOUNT = pathlib.Path("/mnt/psyche")
 
 
 def load_config(path: pathlib.Path | str = CONFIG_PATH) -> dict:
@@ -120,15 +118,8 @@ def get_audio_config(hostname: str, config: dict) -> dict:
 
 
 def get_assets_config(hostname: str, config: dict) -> dict:
-    """Return optional assets storage configuration for ``hostname``.
-
-    Looks for ``[hosts.<name>.assets]`` table with optional keys:
-    - ``label``: filesystem label to mount (default: ``PSYCHE_DATA``)
-    - ``mount``: mount point path (default: ``/mnt/psyche``)
-    - ``device``: explicit device path (e.g., ``/dev/nvme0n1p1``)
-    - ``format_if_empty``: bool; if true, mkfs when device has no FS
-    """
-    return config.get("hosts", {}).get(hostname, {}).get("assets", {})
+    """Deprecated: NVMe assets config removed; returns empty dict."""
+    return {}
 
 
 def script_path(name: str) -> str:
@@ -395,6 +386,8 @@ def ensure_service_env() -> None:
         "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp",
         # Force gpiozero to use modern lgpio backend (works on Pi 5)
         "GPIOZERO_PIN_FACTORY=lgpio",
+        # Centralize cache path for headless operation
+        "XDG_CACHE_HOME=/opt/psyche/cache",
     ]
     try:
         pathlib.Path("/etc/psyche.env").write_text("\n".join(lines) + "\n")
@@ -427,6 +420,57 @@ def ensure_voice_env(hostname: str, config: dict) -> None:
     except Exception:
         # Ignore read errors in restricted environments/tests
         pass
+
+
+def provision_base(hostname: str, config: dict, services: list[str], *, image: bool = False, run=subprocess.run) -> None:
+    """Install core packages and Python deps; used in-image and on-host.
+
+    When ``image=True``, installs most heavy packages in chroot to reduce
+    first-boot work. On-host, main() retains package installs to satisfy tests.
+
+    Steps (best-effort where reasonable):
+    - Create service user ``pete``
+    - Install ROS 2 base and optional CycloneDDS
+    - Stage runtime assets and SSH keys
+    - Ensure Python venv and install zenoh
+    - Write base service env and per-service env (voice/log summarizer)
+    - If ``image=True``: install voice/asr/llama-cpp packages now
+    
+    Examples:
+        >>> provision_base('h', {'hosts': {'h': {'services': []}}}, [], image=True, run=lambda cmd, check: None)  # doctest: +SKIP
+    """
+    ensure_service_user(run)
+    install_ros2(run)
+    try:
+        clone_repo(run)
+    except Exception:
+        pass
+    stage_runtime_assets()
+    try:
+        ensure_ssh_keys()
+    except Exception:
+        pass
+    ensure_python_env(run)
+    install_zeno(run)
+    ensure_shell_env()
+    ensure_service_env()
+    if "logsummarizer" in services:
+        ensure_logsummarizer_env(hostname, config)
+    if "voice" in services:
+        ensure_voice_env(hostname, config)
+    # Build ROS2 workspace inside the image to reduce first-boot work
+    if image:
+        try:
+            setup_workspace(run)
+        except Exception:
+            pass
+    if image:
+        if "voice" in services or "logticker" in services:
+            install_voice_packages(run)
+        if "logsummarizer" in services:
+            install_llama_cpp(run)
+        if "asr" in services:
+            install_asr_packages(run)
     vcfg = get_service_config(hostname, "voice", config)
     if vcfg:
         if "model" in vcfg:
@@ -839,7 +883,7 @@ def prefetch_whisper_model(name: str = "tiny", run=subprocess.run) -> None:
     """Warm Whisper model cache by importing and loading ``name`` in the venv.
 
     Respects ``XDG_CACHE_HOME`` from ``/etc/psyche.env`` so cache goes to the
-    NVMe assets mount when configured.
+    configured shared cache path.
 
     Examples:
         >>> prefetch_whisper_model('tiny', lambda cmd, check: None)  # doctest: +SKIP
@@ -916,114 +960,42 @@ def ensure_assets_prefetch(hostname: str, config: dict, run=subprocess.run) -> N
             continue
 
 
-def ensure_assets_storage(hostname: str, config: dict, run=subprocess.run) -> None:
-    """Ensure a persistent mount for large assets and write env defaults.
+def stage_assets_seed_locally() -> None:
+    """If /opt/psyche/assets_seed exists, copy into fixed system paths.
 
-    - Mounts a labeled device (default label ``PSYCHE_DATA``) at
-      ``/mnt/psyche`` (configurable per host under ``assets``)
-    - Creates standard subdirectories under the mount:
-      - ``models/llama`` for GGUFs
-      - ``piper/voices`` for Piper models
-      - ``cache`` for XDG caches (Whisper, HF, etc.)
-    - Writes defaults to ``/etc/psyche.env``:
-      - ``LLAMA_MODELS_DIR`` -> ``<mount>/models/llama``
-      - ``PIPER_VOICES_DIR`` -> ``<mount>/piper/voices`` (if not already set)
-      - ``XDG_CACHE_HOME`` -> ``<mount>/cache``
-
-    If ``assets.format_if_empty`` is true and the device has no filesystem,
-    it will be formatted ext4 with the specified label.
+    - Llama GGUFs -> /opt/llama/models
+    - Piper voices -> /opt/piper/voices
+    - Caches -> /opt/psyche/cache
     """
-    acfg = get_assets_config(hostname, config)
-    label = str(acfg.get("label", ASSETS_DEFAULT_LABEL))
-    mount = pathlib.Path(str(acfg.get("mount", str(ASSETS_DEFAULT_MOUNT))))
-    device = acfg.get("device")
-    fmt = bool(acfg.get("format_if_empty", False))
-
-    # Resolve device by label if not provided
-    by_label = pathlib.Path("/dev/disk/by-label") / label
-    dev_path = pathlib.Path(device) if device else by_label
-
-    # Ensure mountpoint exists
-    try:
-        mount.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        pass
-
-    # Try to detect filesystem; if absent and allowed, format
-    try:
-        proc = run(["blkid", str(dev_path)], check=False)
-        has_fs = getattr(proc, "returncode", 1) == 0
-        if not has_fs and fmt and device:
-            run(["mkfs.ext4", "-F", "-L", label, device], check=True)
-            has_fs = True
-    except Exception:
-        has_fs = False
-
-    # Write /etc/fstab entry using LABEL= for portability
-    fstab_line = f"LABEL={label} {mount} ext4 noatime,nofail,x-systemd.automount 0 2\n"
-    try:
-        fstab = pathlib.Path("/etc/fstab")
-        content = fstab.read_text() if fstab.exists() else ""
-        if f" {mount} " not in content and f"LABEL={label} " not in content:
-            with fstab.open("a") as fh:
-                fh.write(fstab_line)
-        # Attempt to mount now (best effort)
-        run(["systemctl", "daemon-reload"], check=False)
-        run(["mount", str(mount)], check=False)
-    except Exception:
-        pass
-
-    # Ensure standard directories
-    llama_dir = mount / "models" / "llama"
-    voices_dir = mount / "piper" / "voices"
-    cache_dir = mount / "cache"
+    seed = pathlib.Path("/opt/psyche/assets_seed")
+    if not (seed.exists() and seed.is_dir()):
+        return
+    llama_dir = pathlib.Path("/opt/llama/models")
+    voices_dir = pathlib.Path("/opt/piper/voices")
+    cache_dir = pathlib.Path("/opt/psyche/cache")
     for d in (llama_dir, voices_dir, cache_dir):
         try:
             d.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
-
-    # If a seed exists under /opt/psyche/assets_seed, merge it into the mount
-    seed = pathlib.Path("/opt/psyche/assets_seed")
-    if seed.exists() and seed.is_dir():
-        # Mirror known subtrees; ignore errors in restricted environments
-        mapping = {
-            seed / "models" / "llama": llama_dir,
-            seed / "piper" / "voices": voices_dir,
-            seed / "cache": cache_dir,
-        }
-        for src, dst in mapping.items():
-            if src.exists():
-                try:
-                    for item in src.rglob("*"):
-                        rel = item.relative_to(src)
-                        target = dst / rel
-                        if item.is_dir():
-                            target.mkdir(parents=True, exist_ok=True)
-                        else:
-                            target.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(item, target)
-                except Exception:
-                    pass
-
-    # Merge env defaults
-    env_path = pathlib.Path("/etc/psyche.env")
-    env: dict[str, str] = {}
-    try:
-        if env_path.exists():
-            for line in env_path.read_text().splitlines():
-                if "=" in line:
-                    k, v = line.split("=", 1)
-                    env[k] = v
-    except Exception:
-        pass
-    env.setdefault("LLAMA_MODELS_DIR", str(llama_dir))
-    env.setdefault("PIPER_VOICES_DIR", str(voices_dir))
-    env.setdefault("XDG_CACHE_HOME", str(cache_dir))
-    try:
-        env_path.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n")
-    except Exception:
-        pass
+    mapping = {
+        seed / "models" / "llama": llama_dir,
+        seed / "piper" / "voices": voices_dir,
+        seed / "cache": cache_dir,
+    }
+    for src, dst in mapping.items():
+        if src.exists():
+            try:
+                for item in src.rglob("*"):
+                    rel = item.relative_to(src)
+                    target = dst / rel
+                    if item.is_dir():
+                        target.mkdir(parents=True, exist_ok=True)
+                    else:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(item, target)
+            except Exception:
+                pass
 
 
 def ensure_python_env(run=subprocess.run) -> None:
@@ -1177,63 +1149,82 @@ def main() -> None:
     if not services:
         print(f"No services configured for {host}")
         return
+    print("[setup] starting provisioning for:", host, services)
     ensure_service_user()
     # Install ROS first so colcon and env are available for builds
+    print("[setup] installing ROS 2 base…")
     install_ros2()
+    print("[setup] staging repo and runtime assets…")
     clone_repo()
     stage_runtime_assets()
+    print("[setup] building ROS 2 workspace…")
     setup_workspace()
+    print("[setup] ensuring SSH keys…")
     ensure_ssh_keys()
+    print("[setup] ensuring Python env + zenoh…")
     ensure_python_env()
     install_zeno()
+    print("[setup] writing shell + service env…")
     ensure_shell_env()
     ensure_service_env()
-    # Ensure persistent NVMe assets mount and write defaults
-    try:
-        ensure_assets_storage(host, cfg)
-    except Exception:
-        pass
+    print("[setup] staging baked assets (if any)…")
+    stage_assets_seed_locally()
     # Install embedded defaults and any requested prefetches
     try:
+        print("[setup] fetching default models (TinyLlama, Whisper tiny)…")
         install_default_assets()
+        print("[setup] prefetching configured assets (hosts.toml)…")
         ensure_assets_prefetch(host, cfg)
     except Exception:
         pass
     # Write env for log summarizer from host config, if present
     if "logsummarizer" in services:
+        print("[setup] applying log summarizer env…")
         ensure_logsummarizer_env(host, cfg)
     # Write Piper env overrides from host config, if present
     if "voice" in services:
+        print("[setup] applying voice env…")
         ensure_voice_env(host, cfg)
     if "voice" in services or "logticker" in services:
+        print("[setup] installing voice packages…")
         install_voice_packages()
     if "logsummarizer" in services:
+        print("[setup] installing llama-cpp-python…")
         install_llama_cpp()
     if "asr" in services:
+        print("[setup] installing ASR packages…")
         install_asr_packages()
     if "voice" in services:
+        print("[setup] configuring audio…")
         ensure_audio(get_audio_config(host, cfg))
     if any(s in services for s in ("hrs04", "display")):
+        print("[setup] installing Pi hardware packages…")
         install_pi_hw_packages()
     installed: list[str] = []
     for svc in services:
         scfg = get_service_config(host, svc, cfg)
         if svc == "hrs04":
+            print("[setup] launching HRS04 service…")
             launch_hrs04(scfg)
             installed.append("hrs04")
         elif svc == "display":
+            print("[setup] launching OLED display service…")
             launch_display(scfg)
             installed.append("display")
         elif svc == "voice":
+            print("[setup] launching voice service…")
             launch_voice()
             installed.append("voice")
         elif svc == "logticker":
+            print("[setup] launching logticker service…")
             launch_logticker()
             installed.append("logticker")
         elif svc == "logsummarizer":
+            print("[setup] launching log summarizer service…")
             launch_logsummarizer()
             installed.append("logsummarizer")
         elif svc == "asr":
+            print("[setup] launching ASR service…")
             launch_asr(scfg)
             installed.append("asr")
         else:
