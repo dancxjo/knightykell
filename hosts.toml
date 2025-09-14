@@ -76,9 +76,9 @@ model = "large-v2"
 prompt = "You are a robot named Pete Knightykell."
 # Switch back to llama.cpp (local GGUF)
 backend = "llama"
-# Provide a GGUF URL for your desired model. Keeping prior default here; replace
-# with a 20B GGUF of your choice when ready.
-gguf_url = "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf"
+# Use a Gemma 2 Instruct GGUF for llama.cpp
+# Smaller, fast option (2B Instruct, Q4_K_M):
+gguf_url = "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf"
 # Optional Ollama settings (disabled when backend = "llama"):
 # ollama_model = "gpt_oss:20b"
 # timeout = 30
