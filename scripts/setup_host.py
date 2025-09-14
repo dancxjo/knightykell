@@ -351,6 +351,21 @@ def setup_workspace(run=subprocess.run) -> None:
                 ["sudo", "-u", SERVICE_USER, "git", "clone", REPO_URL, str(target)],
                 check=True,
             )
+    # Patch third-party sources if present (e.g., fix missing <array> include)
+    try:
+        for p in src.rglob("mpu6050sensor.h"):
+            try:
+                h = p.read_text()
+            except Exception:
+                continue
+            if "#include <array>" not in h:
+                if "#include <unordered_map>" in h:
+                    h = h.replace("#include <unordered_map>", "#include <unordered_map>\n#include <array>")
+                else:
+                    h = "#include <array>\n" + h
+                p.write_text(h)
+    except Exception:
+        pass
     # Ensure common native deps are present (best-effort), then rosdep, then build
     try:
         run(["apt-get", "update"], check=False)
@@ -362,7 +377,7 @@ def setup_workspace(run=subprocess.run) -> None:
             [
                 "bash",
                 "-lc",
-                f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && rosdep update && rosdep install --from-paths src --ignore-src -r -y",
+                f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && command -v rosdep >/dev/null 2>&1 && rosdep update && rosdep install --from-paths src --ignore-src -r -y || true",
             ],
             check=False,
         )
@@ -984,9 +999,15 @@ def install_ros2(run=subprocess.run) -> None:
         run(["apt-get", "install", "-y", "ros-jazzy-rmw-cyclonedds-cpp"], check=True)
     except Exception:
         pass
-    # Install colcon from apt; if that fails at runtime, pip fallback happens later in build
+    # Install colcon and rosdep from apt; if colcon fails, pip fallback happens later in build
     try:
-        run(["apt-get", "install", "-y", "python3-colcon-common-extensions"], check=True)
+        run(["apt-get", "install", "-y", "python3-colcon-common-extensions", "python3-rosdep"], check=True)
+        # Initialize rosdep if not already initialized (best-effort)
+        try:
+            if not pathlib.Path("/etc/ros/rosdep/sources.list.d/20-default.list").exists():
+                run(["rosdep", "init"], check=False)
+        except Exception:
+            pass
     except Exception:
         # fallback to pip install; ignore if pip not present here
         run(["pip", "install", "colcon-common-extensions"], check=False)
@@ -1897,14 +1918,14 @@ def main() -> None:
     print("[setup] staging repo and runtime assets…")
     clone_repo()
     stage_runtime_assets()
-    print("[setup] building ROS 2 workspace…")
-    setup_workspace()
-    # Pull extra ROS 2 repos (e.g., AutonomyLab create) and rebuild
+    # Pull extra ROS 2 repos (e.g., AutonomyLab create) and patch before first build
     print("[setup] ensuring extra ROS 2 repos…")
     try:
         ensure_ros2_extra_repos(host, cfg)
     except Exception:
         pass
+    print("[setup] building ROS 2 workspace…")
+    setup_workspace()
     print("[setup] ensuring SSH keys…")
     ensure_ssh_keys()
     print("[setup] ensuring Python env + zenoh…")
