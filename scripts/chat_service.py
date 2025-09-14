@@ -119,11 +119,29 @@ class _LlamaCppBackend(_ChatBackend):
 
 
 def _select_backend() -> _ChatBackend | None:
-    # Prefer Ollama if installed; default to Llama 3.2 small
+    """Select chat backend honoring ``CHAT_BACKEND`` preference.
+
+    - If ``CHAT_BACKEND`` is ``llama``/``llama.cpp``: use llama-cpp when model_path exists
+    - If ``CHAT_BACKEND`` is ``ollama``: use Ollama (pulls model as needed)
+    - Otherwise: prefer Ollama if available; else llama-cpp if model_path exists
+    """
+    pref = (os.getenv("CHAT_BACKEND", "").strip().lower())
     model = os.getenv("OLLAMA_MODEL", "llama3.2:1b-instruct")
+    mp = os.getenv("LLAMA_MODEL_PATH")
+    if pref in ("llama", "llama.cpp"):
+        if mp and os.path.exists(mp):
+            try:
+                return _LlamaCppBackend(model_path=mp)
+            except Exception:
+                return None
+        return None
+    if pref == "ollama":
+        if _has_cmd("ollama"):
+            return _OllamaBackend(model=model)
+        return None
+    # Default behavior
     if _has_cmd("ollama"):
         return _OllamaBackend(model=model)
-    mp = os.getenv("LLAMA_MODEL_PATH")
     if mp and os.path.exists(mp):
         try:
             return _LlamaCppBackend(model_path=mp)

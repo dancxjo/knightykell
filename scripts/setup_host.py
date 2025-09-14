@@ -1209,6 +1209,7 @@ def ensure_chat_env(hostname: str, config: dict) -> None:
     - ``gguf_url``: download and set ``LLAMA_MODEL_PATH``
     - ``ollama_model`` -> ``OLLAMA_MODEL``
     - ``timeout`` (seconds) -> ``CHAT_OLLAMA_TIMEOUT`` (Ollama backend)
+    - ``backend``: ``CHAT_BACKEND`` ("llama" or "ollama")
 
     Examples:
         >>> cfg = {'hosts': {'h': {'chat': {'prompt': 'You are helpful'}}}}
@@ -1241,6 +1242,8 @@ def ensure_chat_env(hostname: str, config: dict) -> None:
             env["OLLAMA_MODEL"] = str(ccfg["ollama_model"])
         if "timeout" in ccfg:
             env["CHAT_OLLAMA_TIMEOUT"] = str(ccfg["timeout"])
+        if "backend" in ccfg:
+            env["CHAT_BACKEND"] = str(ccfg["backend"])
     try:
         env_path.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n")
     except Exception:
