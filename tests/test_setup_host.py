@@ -26,6 +26,7 @@ from scripts.setup_host import (
     install_llama_cpp,
     launch_logsummarizer,
     fetch_llama_model,
+    ensure_assets_prefetch,
 )
 
 
@@ -271,6 +272,31 @@ def test_fetch_llama_model_invokes_curl(tmp_path, monkeypatch):
     out = fetch_llama_model("https://example.com/model.Q4_K_M.gguf", str(tmp_path), fake_run)
     assert out.endswith("model.Q4_K_M.gguf")
     assert calls and calls[0][0] == "curl"
+
+
+def test_ensure_assets_prefetch_downloads(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, check):
+        calls.append(cmd)
+
+    cfg = {
+        'hosts': {
+            'h': {
+                'assets': {
+                    'prefetch': {
+                        'whisper': ['tiny'],
+                        'llama': ['https://example.com/m.gguf']
+                    }
+                }
+            }
+        }
+    }
+    monkeypatch.setenv('LLAMA_MODELS_DIR', str(tmp_path))
+    ensure_assets_prefetch('h', cfg, fake_run)
+    # Should attempt python (for whisper) and curl (for llama)
+    flat = " ".join(" ".join(c) for c in calls)
+    assert 'curl' in flat or any('curl' in c for c in calls[0])
 
 
 def test_main_launches_configured_services(monkeypatch):

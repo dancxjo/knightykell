@@ -170,6 +170,7 @@ def stage_runtime_assets() -> None:
         "ssd1306_display_node.py",
         "oled_splash.py",
         "oled_clear.py",
+        "fetch_models.py",
     ):
         src = scripts_src / name
         if src.exists():
@@ -834,6 +835,87 @@ def fetch_llama_model(url: str, dest_dir: str | None = None, run=subprocess.run)
     return str(out)
 
 
+def prefetch_whisper_model(name: str = "tiny", run=subprocess.run) -> None:
+    """Warm Whisper model cache by importing and loading ``name`` in the venv.
+
+    Respects ``XDG_CACHE_HOME`` from ``/etc/psyche.env`` so cache goes to the
+    NVMe assets mount when configured.
+
+    Examples:
+        >>> prefetch_whisper_model('tiny', lambda cmd, check: None)  # doctest: +SKIP
+    """
+    py = VENV_DIR / "bin/python"
+    if not py.exists():
+        return
+    xdg = os.getenv("XDG_CACHE_HOME") or _read_env_file_var("XDG_CACHE_HOME")
+    env = os.environ.copy()
+    if xdg:
+        env["XDG_CACHE_HOME"] = xdg
+    code = (
+        "import whisper; whisper.load_model(\"" + str(name) + "\"); print(\"ok\")"
+    )
+    try:
+        run([str(py), "-c", code], check=True, env=env)
+    except Exception:
+        # Best-effort; skip on failure
+        pass
+
+
+def install_default_assets(run=subprocess.run) -> None:
+    """Install small default models: TinyLlama GGUF and Whisper tiny.
+
+    - Downloads TinyLlama 1.1B Chat Q4_K_M GGUF into ``LLAMA_MODELS_DIR`` if
+      not already present.
+    - Warms Whisper ``tiny`` model cache in ``XDG_CACHE_HOME`` (if whisper is installed).
+    """
+    # TinyLlama default GGUF
+    models_dir = pathlib.Path(os.getenv("LLAMA_MODELS_DIR") or _read_env_file_var("LLAMA_MODELS_DIR", "/opt/llama/models") or "/opt/llama/models")
+    models_dir.mkdir(parents=True, exist_ok=True)
+    tiny_name = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+    target = models_dir / tiny_name
+    if not target.exists():
+        url = "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf?download=true"
+        try:
+            fetch_llama_model(url, str(models_dir), run)
+        except Exception:
+            pass
+    # Whisper tiny cache warm
+    prefetch_whisper_model("tiny", run)
+
+
+def ensure_assets_prefetch(hostname: str, config: dict, run=subprocess.run) -> None:
+    """Download additional models specified under ``assets.prefetch``.
+
+    Schema:
+        [hosts.<name>.assets.prefetch]
+        whisper = ["tiny", "base", ...]
+        llama = ["<url or known name>", ...]
+
+    Known llama names:
+        - tinyllama-q4_k_m -> TinyLlama 1.1B Chat v1.0 Q4_K_M GGUF
+    """
+    pre = config.get("hosts", {}).get(hostname, {}).get("assets", {}).get("prefetch", {})
+    if not isinstance(pre, dict):
+        return
+    # Whisper models
+    for name in map(str, pre.get("whisper", []) or []):
+        try:
+            prefetch_whisper_model(name, run)
+        except Exception:
+            continue
+    # Llama models
+    known = {
+        "tinyllama-q4_k_m": "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf?download=true",
+    }
+    dest = os.getenv("LLAMA_MODELS_DIR") or _read_env_file_var("LLAMA_MODELS_DIR", "/opt/llama/models") or "/opt/llama/models"
+    for item in map(str, pre.get("llama", []) or []):
+        url = known.get(item.lower(), item)
+        try:
+            fetch_llama_model(url, dest, run)
+        except Exception:
+            continue
+
+
 def ensure_assets_storage(hostname: str, config: dict, run=subprocess.run) -> None:
     """Ensure a persistent mount for large assets and write env defaults.
 
@@ -1109,6 +1191,12 @@ def main() -> None:
     # Ensure persistent NVMe assets mount and write defaults
     try:
         ensure_assets_storage(host, cfg)
+    except Exception:
+        pass
+    # Install embedded defaults and any requested prefetches
+    try:
+        install_default_assets()
+        ensure_assets_prefetch(host, cfg)
     except Exception:
         pass
     # Write env for log summarizer from host config, if present

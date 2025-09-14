@@ -185,3 +185,35 @@ CHROOT_APT=1 make ubuntu-images HOSTS="brainstem"
 ```
 
 The image includes `firstboot` service that runs full provisioning on first boot; pre-seeded assets are moved under the NVMe mount (`/mnt/psyche`) automatically.
+
+Default embedded models and fetching helpers
+-------------------------------------------
+
+- Embedded defaults during provisioning:
+  - LLM: TinyLlama 1.1B Chat Q4_K_M (`tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf`) → `$LLAMA_MODELS_DIR`
+  - ASR: Whisper `tiny` model warmed into `$XDG_CACHE_HOME`
+  - Both happen automatically at provisioning time (best-effort, network required). If assets are baked into the image via `ASSETS_SEED_DIR`, they will be moved to NVMe on first boot instead.
+
+- Fetch other models via helper:
+  - Script: `scripts/fetch_models.py`
+  - Examples:
+
+```
+# Fetch defaults into seed layout (useful before image build)
+python3 scripts/fetch_models.py --defaults
+
+# Fetch Whisper tiny+base into /mnt/psyche cache, and TinyLlama GGUF into models dir
+XDG_CACHE_HOME=/mnt/psyche/cache \
+LLAMA_MODELS_DIR=/mnt/psyche/models/llama \
+python3 scripts/fetch_models.py --whisper tiny base --llama tinyllama-q4_k_m
+```
+
+- hosts.toml-based prefetch:
+
+```
+[hosts.brainstem.assets.prefetch]
+whisper = ["tiny", "base"]
+llama = ["tinyllama-q4_k_m", "https://example.com/OtherModel.gguf"]
+```
+
+Provisioning reads this and fetches at install time.
