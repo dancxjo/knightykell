@@ -345,7 +345,11 @@ ExecStart={wrapped}
 WantedBy=multi-user.target
 """
     unit_path.write_text(unit_content)
+    # Reload units so changes take effect on re-provision runs
+    run(["systemctl", "daemon-reload"], check=True)
     run(["systemctl", "enable", "--now", f"psyche-{name}.service"], check=True)
+    # Always restart to pick up script/env updates (idempotent)
+    run(["systemctl", "restart", f"psyche-{name}.service"], check=False)
 
 
 def ensure_shell_env() -> None:
@@ -1039,6 +1043,36 @@ def launch_voice(run=subprocess.run) -> None:
     install_service_unit("voice", cmd, run)
 
 
+def install_host_tools() -> None:
+    """Install small host CLI helpers for easy reprovisioning.
+
+    - ``/usr/local/bin/psyche-provision``: reruns setup with optional PSYCHE_SRC
+    """
+    try:
+        bin_dir = pathlib.Path("/usr/local/bin")
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        prov = bin_dir / "psyche-provision"
+        script = f"""#!/usr/bin/env bash
+set -euo pipefail
+SRC="${{PSYCHE_SRC:-{REPO_DIR}}}"
+if [ -d "$SRC" ]; then
+  echo "[psyche] reprovisioning from $SRC" >&2
+  exec sudo -E env PSYCHE_SRC="$SRC" python3 /opt/psyche/setup_host.py
+else
+  echo "[psyche] reprovisioning from /opt/psyche" >&2
+  exec sudo -E python3 /opt/psyche/setup_host.py
+fi
+"""
+        prov.write_text(script)
+        try:
+            os.chmod(prov, 0o755)
+        except Exception:
+            pass
+    except PermissionError:
+        # Non-root environments/tests: ignore
+        pass
+
+
 def launch_logticker(run=subprocess.run) -> None:
     """Install systemd unit publishing logs to the voice service.
 
@@ -1169,6 +1203,8 @@ def main() -> None:
     ensure_service_env()
     print("[setup] staging baked assets (if any)…")
     stage_assets_seed_locally()
+    # Install host helper CLI for idempotent re-provisioning
+    install_host_tools()
     # Install embedded defaults and any requested prefetches
     try:
         print("[setup] fetching default models (TinyLlama, Whisper tiny)…")

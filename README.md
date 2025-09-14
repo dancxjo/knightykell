@@ -44,6 +44,25 @@ make provision
 
 - Re‑run safely; operations are idempotent where practical.
 
+Re‑provisioning on the device
+-----------------------------
+
+To update an already provisioned host (rebuild workspace, refresh scripts, restart services):
+
+- From a checkout on the device:
+
+```
+sudo -E env PSYCHE_SRC=$(pwd) python3 scripts/setup_host.py
+```
+
+- Or use the helper installed by provisioning:
+
+```
+psyche-provision     # uses $PSYCHE_SRC or /home/pete/psyche if present
+```
+
+Both approaches are idempotent — units are reloaded, services restart, the workspace rebuilds, and runtime assets refresh.
+
 Configuration
 -------------
 
