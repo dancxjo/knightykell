@@ -73,7 +73,7 @@ frame_id = "laser"
 [hosts.cerebellum.imu]
 # Default params in package; ensure I2C enabled (install_pi_hw_packages)
 frequency = 100
-i2c_bus = 3  # enable i2c-3 on GPIO 4(SDA)/5(SCL) and use it for the IMU
+i2c_bus = "auto"  # auto-detect the bus exposing 0x68; or set a number explicitly
 
 [hosts.cerebellum.ros2]
 repos = [

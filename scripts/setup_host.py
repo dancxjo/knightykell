@@ -373,8 +373,14 @@ def setup_workspace(run=subprocess.run) -> None:
     except Exception:
         pass
     try:
+        # Set sane permissions on rosdep cache/registry (no-op if already set)
+        run(["bash", "-lc", "command -v rosdep >/dev/null 2>&1 && rosdep fix-permissions || true"], check=False)
+    except Exception:
+        pass
+    try:
         run(
             [
+                "sudo", "-u", SERVICE_USER,
                 "bash",
                 "-lc",
                 f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && command -v rosdep >/dev/null 2>&1 && rosdep update && rosdep install --from-paths src --ignore-src -r -y || true",
@@ -766,7 +772,13 @@ def ensure_ros2_extra_repos(hostname: str, config: dict, run=subprocess.run) -> 
     except Exception:
         pass
     try:
+        # Set sane permissions on rosdep cache/registry (no-op if already set)
+        run(["bash", "-lc", "command -v rosdep >/dev/null 2>&1 && rosdep fix-permissions || true"], check=False)
+    except Exception:
+        pass
+    try:
         run([
+            "sudo", "-u", SERVICE_USER,
             "bash", "-lc",
             f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && command -v rosdep >/dev/null 2>&1 && rosdep update && rosdep install --from-paths src --ignore-src -r -y || true",
         ], check=False)
@@ -1336,17 +1348,51 @@ def ensure_i2c_bus_overlay(bus: int = 3, pins: str = "pins_4_5") -> None:
             pass
 
 
+def _detect_i2c_bus_for_addr(addr_hex: str = "0x68") -> int | None:
+    """Return first i2c bus number that reports ``addr_hex`` via i2cdetect.
+
+    Best-effort: requires i2c-tools. Returns None on failure.
+    """
+    try:
+        import glob, re
+        buses = []
+        for p in glob.glob("/dev/i2c-*"):
+            try:
+                buses.append(int(p.rsplit("-", 1)[1]))
+            except Exception:
+                continue
+        for b in sorted(buses):
+            try:
+                # i2cdetect prints the address without 0x prefix in the grid
+                hexd = addr_hex.lower().replace("0x", "").zfill(2)
+                out = subprocess.run(["i2cdetect", "-y", str(b)], capture_output=True, text=True, check=False)
+                if hexd in (out.stdout or "").lower():
+                    return b
+            except Exception:
+                continue
+    except Exception:
+        return None
+    return None
+
+
 def ensure_imu_env(hostname: str, config: dict) -> None:
     """Append I2C bus selection for IMU to /etc/psyche.env if configured.
 
-    Reads ``[hosts.<name>.imu].i2c_bus`` and sets ``I2C_BUS`` env var.
-    Also enables an overlay for bus 3 using GPIO 4/5 pins by default.
+    - Reads ``[hosts.<name>.imu].i2c_bus``; supports an integer bus or the
+      string "auto" to probe for the MPU6050's default address (0x68).
+    - If bus 3 is selected, enables an overlay for i2c3 on GPIO 4/5.
     """
-    bus = None
-    try:
-        bus = int(config.get("hosts", {}).get(hostname, {}).get("imu", {}).get("i2c_bus", 0))
-    except Exception:
-        bus = None
+    val = config.get("hosts", {}).get(hostname, {}).get("imu", {}).get("i2c_bus")
+    bus: int | None = None
+    if val is None:
+        return
+    if isinstance(val, str) and val.strip().lower() == "auto":
+        bus = _detect_i2c_bus_for_addr("0x68")
+    else:
+        try:
+            bus = int(val)
+        except Exception:
+            bus = None
     if not bus:
         return
     if bus == 3:
