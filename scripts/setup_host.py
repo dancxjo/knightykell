@@ -164,6 +164,9 @@ def stage_runtime_assets() -> None:
         "asr_utterance_service.py",
         "hrs04_node.py",
         "ssd1306_display_node.py",
+        "topic_list_service.py",
+        "retry_exec.py",
+        "create_singer.py",
         "oled_splash.py",
         "oled_clear.py",
         "fetch_models.py",
@@ -1420,9 +1423,16 @@ def launch_create(cfg: dict | None = None, run=subprocess.run) -> None:
     params.setdefault("serial_port", port)
     kv = [f"{k}:={v}" for k, v in params.items()]
     if pkg and lfile:
-        cmd = ["ros2", "launch", str(pkg), str(lfile), *kv, *extra_args]
+        inner = ["ros2", "launch", str(pkg), str(lfile), *kv, *extra_args]
     else:
-        cmd = ["ros2", "run", "create_driver", "create_driver_node", *kv, *extra_args]
+        inner = ["ros2", "run", "create_driver", "create_driver_node", *kv, *extra_args]
+    # Wrap with retry/backoff to keep trying to connect to the robot
+    cmd = [
+        str(VENV_DIR / "bin/python"),
+        script_path("retry_exec.py"),
+        "--min", "1", "--max", "60", "--factor", "1.5", "--jitter", "0.3", "--",
+        *inner,
+    ]
     install_service_unit("create", cmd, run)
 
 
@@ -1434,6 +1444,29 @@ def launch_chat(run=subprocess.run) -> None:
     """
     cmd = [str(VENV_DIR / "bin/python"), script_path("chat_service.py")]
     install_service_unit("chat", cmd, run)
+
+
+def launch_singer(cfg: dict | None = None, run=subprocess.run) -> None:
+    """Install systemd unit for the Create melody announcer.
+
+    Reads port/baud from ``[hosts.<name>.singer]`` or falls back to
+    ``[hosts.<name>.create].port``.
+
+    Examples:
+        >>> launch_singer({'port': '/dev/ttyUSB0'}, lambda cmd, check: None)  # doctest: +SKIP
+    """
+    cfg = cfg or {}
+    port = str(cfg.get("port") or cfg.get("device") or "/dev/ttyUSB0")
+    baud = str(cfg.get("baud", 57600))
+    period = str(cfg.get("period", 60))
+    cmd = [
+        str(VENV_DIR / "bin/python"),
+        script_path("create_singer.py"),
+        "--port", port,
+        "--baud", baud,
+        "--period", period,
+    ]
+    install_service_unit("singer", cmd, run)
 
 
 def ensure_chat_env(hostname: str, config: dict) -> None:

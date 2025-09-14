@@ -13,6 +13,8 @@ from typing import Dict, List
 from collections import deque
 import os
 import socket
+import pathlib
+import termios
 
 import rclpy
 from rclpy.node import Node
@@ -91,6 +93,10 @@ class DisplayNode(Node):
         self._extra_off = 0
         self._last_ip = None
         self._last_ip_ts = 0.0
+        self._last_wifi = None
+        self._last_wifi_ts = 0.0
+        self._last_temp = None
+        self._last_temp_ts = 0.0
         qos = QoSProfile(depth=10)
         for t in self._topics:
             self.create_subscription(String, t, self._make_cb(t), qos)
@@ -224,16 +230,25 @@ class DisplayNode(Node):
         self._device.display(img)
 
     def _status_text(self) -> str:
-        """Return short clock, date, IP, and hostname as a line.
+        """Return compact status: time/date, IP, host, Wi‑Fi, temp, ROS domain.
 
-        Format: ``HH:MM  YYYY-­MM-­DD  192.168.x.x  host``
+        Format: ``HH:MM  YYYY-MM-DD  192.168.x.x  host  WiFi:-58dBm  CPU:47C  RD:0``
         """
         # Time and date
         t = time.strftime("%H:%M")
         d = time.strftime("%Y-%m-%d")
         host = self._safe_hostname()
         ip = self._primary_ip()
-        return f"{t}  {d}  {ip}  {host}"
+        wifi = self._wifi_rssi()
+        temp = self._cpu_temp()
+        rd = os.getenv("ROS_DOMAIN_ID", "0")
+        parts = [f"{t}", d, ip, host]
+        if wifi:
+            parts.append(f"WiFi:{wifi}")
+        if temp:
+            parts.append(f"CPU:{temp}")
+        parts.append(f"RD:{rd}")
+        return "  ".join(parts)
 
     def _safe_hostname(self) -> str:
         try:
@@ -261,6 +276,57 @@ class DisplayNode(Node):
         self._last_ip = ip
         self._last_ip_ts = now
         return ip
+
+    def _wifi_rssi(self) -> str | None:
+        # Parse /proc/net/wireless for wlan0 level in dBm
+        now = time.monotonic()
+        if self._last_wifi and now - self._last_wifi_ts < 5.0:
+            return self._last_wifi
+        path = pathlib.Path("/proc/net/wireless")
+        val: str | None = None
+        try:
+            txt = path.read_text()
+            for line in txt.splitlines():
+                if line.strip().startswith("wlan0:"):
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        lvl = parts[3]
+                        # Expect like -58.
+                        try:
+                            n = float(lvl)
+                            val = f"{int(n)}dBm"
+                        except Exception:
+                            val = lvl.strip('.').strip()
+                        break
+        except Exception:
+            val = None
+        self._last_wifi = val
+        self._last_wifi_ts = now
+        return val
+
+    def _cpu_temp(self) -> str | None:
+        # Try common thermal zones
+        now = time.monotonic()
+        if self._last_temp and now - self._last_temp_ts < 5.0:
+            return self._last_temp
+        def read_temp(p: pathlib.Path) -> float | None:
+            try:
+                raw = p.read_text().strip()
+                v = float(raw)
+                return v / 1000.0 if v > 200 else v
+            except Exception:
+                return None
+        temp_c: float | None = None
+        for n in range(0, 8):
+            p = pathlib.Path(f"/sys/class/thermal/thermal_zone{n}/temp")
+            if p.exists():
+                v = read_temp(p)
+                if v is not None:
+                    temp_c = v
+                    break
+        self._last_temp = f"{int(temp_c)}C" if temp_c is not None else None
+        self._last_temp_ts = now
+        return self._last_temp
 
     def _wrap_text(self, draw: "ImageDraw", text: str, max_w: int) -> List[str]:
         # Simple word-wrapping by pixel width
