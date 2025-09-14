@@ -158,3 +158,30 @@ For official Ubuntu preinstalled images on Raspberry Pi, drop `docs/cloud-init/u
 
 - Edit hostname in the template.
 - On boot, cloud-init runs the one-liner installer and the PSYCHE services come up after provisioning.
+
+Image Building (Ubuntu on Raspberry Pi)
+--------------------------------------
+
+Build fully staged Ubuntu Server images for Pi models using chroot to pre-seed assets:
+
+- Build all Ubuntu-marked hosts: `make ubuntu-images`
+- Filter: `make ubuntu-images HOSTS="brainstem cerebellum"`
+- Optional pre-seed assets into the image (copied to `/opt/psyche/assets_seed` and moved to NVMe at first boot):
+
+```
+ASSETS_SEED_DIR=/path/to/assets \
+  make ubuntu-images HOSTS="brainstem"
+```
+
+Expected `ASSETS_SEED_DIR` layout (any subset is fine):
+- `models/llama/*.gguf`
+- `piper/voices/*.onnx` and `*.onnx.json`
+- `cache/` (Whisper models live under `XDG_CACHE_HOME`)
+
+Advanced: pre-install a few packages in chroot (best-effort, needs `qemu-aarch64-static` on x86 build hosts):
+
+```
+CHROOT_APT=1 make ubuntu-images HOSTS="brainstem"
+```
+
+The image includes `firstboot` service that runs full provisioning on first boot; pre-seeded assets are moved under the NVMe mount (`/mnt/psyche`) automatically.

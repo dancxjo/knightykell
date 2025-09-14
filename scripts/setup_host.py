@@ -182,6 +182,22 @@ def stage_runtime_assets() -> None:
             pass
 
 
+def _read_env_file_var(key: str, default: str | None = None) -> str | None:
+    """Return a value for ``key`` from /etc/psyche.env, if present."""
+    try:
+        env_path = pathlib.Path("/etc/psyche.env")
+        if not env_path.exists():
+            return default
+        for line in env_path.read_text().splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                if k == key:
+                    return v
+    except Exception:
+        return default
+    return default
+
+
 def ros2_pkg_exists(name: str, run=subprocess.run) -> bool:
     """Return True if a ROS 2 package ``name`` is discoverable.
 
@@ -693,7 +709,7 @@ def install_voice_packages(run=subprocess.run) -> None:
         >>> any('piper-tts' in c for cmd in calls for c in cmd)
         True
     """
-    voices_dir = pathlib.Path(os.getenv("PIPER_VOICES_DIR", "/opt/piper/voices"))
+    voices_dir = pathlib.Path(os.getenv("PIPER_VOICES_DIR") or _read_env_file_var("PIPER_VOICES_DIR", "/opt/piper/voices") or "/opt/piper/voices")
     # Ensure playback utility exists
     run(["apt-get", "install", "-y", "alsa-utils"], check=True)
     # Install Piper TTS into the venv to avoid GTK name conflicts with the mouse tool "piper"
@@ -804,7 +820,7 @@ def fetch_llama_model(url: str, dest_dir: str | None = None, run=subprocess.run)
         >>> fetch_llama_model('https://example.com/model.gguf', '/tmp/llama', lambda cmd, check: None)  # doctest: +SKIP
         '/tmp/llama/model.gguf'
     """
-    base = pathlib.Path(dest_dir or os.getenv("LLAMA_MODELS_DIR", "/opt/llama/models"))
+    base = pathlib.Path(dest_dir or os.getenv("LLAMA_MODELS_DIR") or _read_env_file_var("LLAMA_MODELS_DIR", "/opt/llama/models") or "/opt/llama/models")
     try:
         base.mkdir(parents=True, exist_ok=True)
     except Exception:
@@ -884,6 +900,29 @@ def ensure_assets_storage(hostname: str, config: dict, run=subprocess.run) -> No
             d.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
+
+    # If a seed exists under /opt/psyche/assets_seed, merge it into the mount
+    seed = pathlib.Path("/opt/psyche/assets_seed")
+    if seed.exists() and seed.is_dir():
+        # Mirror known subtrees; ignore errors in restricted environments
+        mapping = {
+            seed / "models" / "llama": llama_dir,
+            seed / "piper" / "voices": voices_dir,
+            seed / "cache": cache_dir,
+        }
+        for src, dst in mapping.items():
+            if src.exists():
+                try:
+                    for item in src.rglob("*"):
+                        rel = item.relative_to(src)
+                        target = dst / rel
+                        if item.is_dir():
+                            target.mkdir(parents=True, exist_ok=True)
+                        else:
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(item, target)
+                except Exception:
+                    pass
 
     # Merge env defaults
     env_path = pathlib.Path("/etc/psyche.env")

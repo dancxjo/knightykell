@@ -55,6 +55,31 @@ sudo mkdir -p "$ROOT/opt/psyche/scripts"
 sudo cp -r "$REPO_ROOT/scripts/"*.py "$ROOT/opt/psyche/scripts/"
 sudo chmod +x "$ROOT/opt/psyche/firstboot.sh"
 
+# Optionally pre-seed large assets (models, voices, caches) for first boot
+if [ -n "${ASSETS_SEED_DIR:-}" ] && [ -d "$ASSETS_SEED_DIR" ]; then
+  echo "[build] seeding assets from $ASSETS_SEED_DIR"
+  sudo mkdir -p "$ROOT/opt/psyche/assets_seed"
+  sudo rsync -a --delete "$ASSETS_SEED_DIR"/ "$ROOT/opt/psyche/assets_seed/"
+fi
+
+# Minimal chroot prep (bind mounts); apt ops are optional and best-effort
+if [ "${CHROOT_APT:-0}" = "1" ]; then
+  echo "[build] preparing chroot for apt installs (optional)"
+  if command -v qemu-aarch64-static >/dev/null 2>&1; then
+    sudo mkdir -p "$ROOT/usr/bin"
+    sudo cp "$(command -v qemu-aarch64-static)" "$ROOT/usr/bin/"
+  fi
+  sudo mount --bind /dev "$ROOT/dev" || true
+  sudo mount --bind /proc "$ROOT/proc" || true
+  sudo mount --bind /sys "$ROOT/sys" || true
+  set +e
+  sudo chroot "$ROOT" bash -lc "apt-get update && apt-get install -y curl ca-certificates python3-venv ffmpeg alsa-utils" || true
+  set -e
+  sudo umount "$ROOT/dev" || true
+  sudo umount "$ROOT/proc" || true
+  sudo umount "$ROOT/sys" || true
+fi
+
 sudo mkdir -p "$ROOT/etc/systemd/system/multi-user.target.wants"
 sudo ln -sf /etc/systemd/system/psyche-firstboot.service \
   "$ROOT/etc/systemd/system/multi-user.target.wants/psyche-firstboot.service"
@@ -66,4 +91,3 @@ FINAL_IMG="$OUT_DIR/${HOST}.img"
 mv "$BASE_IMG" "$FINAL_IMG"
 rm -rf "$BOOT" "$ROOT" "$WORK_DIR"
 echo "[build] image ready: $FINAL_IMG"
-
