@@ -367,6 +367,22 @@ WantedBy=multi-user.target
     run(["systemctl", "restart", f"psyche-{name}.service"], check=False)
 
 
+def stop_old_services(services: list[str], run=subprocess.run) -> None:
+    """Stop existing systemd units for the given services.
+
+    Non-fatal if a unit is missing. Helps avoid duplicate processes during
+    re-provisioning when units are updated in place.
+
+    Examples:
+        >>> stop_old_services(["voice", "asr"], lambda cmd, check: None)  # doctest: +SKIP
+    """
+    for name in services:
+        try:
+            run(["systemctl", "stop", f"psyche-{name}.service"], check=False)
+        except Exception:
+            pass
+
+
 def ensure_shell_env() -> None:
     """Ensure interactive shells source ROS and workspace environments.
 
@@ -1317,6 +1333,8 @@ def main() -> None:
         print(f"No services configured for {host}")
         return
     print("[setup] starting provisioning for:", host, services)
+    # Stop any previously running services first
+    stop_old_services(services)
     ensure_service_user()
     # Install ROS first so colcon and env are available for builds
     print("[setup] installing ROS 2 base…")

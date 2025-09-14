@@ -17,6 +17,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import time
 import json
 import os
 import queue
@@ -90,7 +91,22 @@ class VoiceNode(Node):
     def _worker(self) -> None:
         """Continuously speak queued messages."""
         while rclpy.ok():
-            text = self._queue.get()
+            # Coalesce bursts of short messages into one utterance to avoid
+            # staccato reading (e.g., "It's. Reading. Like. This.")
+            first = self._queue.get()
+            parts = [first]
+            start = time.monotonic()
+            # Collect additional queued items for a short window
+            try:
+                import time as _t
+                while _t.monotonic() - start < 0.35 and not self._queue.empty():
+                    try:
+                        parts.append(self._queue.get_nowait())
+                    except Exception:
+                        break
+            except Exception:
+                pass
+            text = " ".join(s.strip() for s in parts if s and s.strip())
             # Launch Piper to produce RAW PCM to stdout, then pipe into aplay
             try:
                 piper = subprocess.Popen(

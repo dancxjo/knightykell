@@ -115,9 +115,9 @@ class _LlamaCppBackend(_ChatBackend):
 
 
 def _select_backend() -> _ChatBackend | None:
-    # Prefer Ollama if installed and model provided, else llama-cpp
-    model = os.getenv("OLLAMA_MODEL")
-    if _has_cmd("ollama") and model:
+    # Prefer Ollama if installed; default model if not provided
+    model = os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
+    if _has_cmd("ollama"):
         return _OllamaBackend(model=model)
     mp = os.getenv("LLAMA_MODEL_PATH")
     if mp and os.path.exists(mp):
