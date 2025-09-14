@@ -555,7 +555,8 @@ def ensure_db_env() -> None:
         "QDRANT_URL=http://127.0.0.1:6333",
         "NEO4J_URI=bolt://127.0.0.1:7687",
         "NEO4J_USER=neo4j",
-        "NEO4J_PASSWORD=neo4j",
+        # Default password must be at least 8 chars
+        "NEO4J_PASSWORD=neo4jneo4j",
         "VISION_MODELS_DIR=/opt/psyche/models/vision",
     ]
     try:
@@ -1208,7 +1209,11 @@ def install_neo4j(run=subprocess.run) -> None:
         return
     # Set initial password (ignore if already set)
     try:
-        run(["neo4j-admin", "dbms", "set-initial-password", "neo4j"], check=False)
+        # Choose password from env or default to a safe length
+        pwd = os.getenv("NEO4J_PASSWORD") or _read_env_file_var("NEO4J_PASSWORD", "neo4jneo4j") or "neo4jneo4j"
+        if len(pwd) < 8:
+            pwd = (pwd * 2) if len(pwd) > 0 else "neo4jneo4j"
+        run(["neo4j-admin", "dbms", "set-initial-password", str(pwd)], check=False)
     except Exception:
         pass
 
@@ -1794,17 +1799,32 @@ def launch_lidar(cfg: dict | None = None, run=subprocess.run) -> None:
     install_service_unit("lidar", cmd, run)
 
 
-def launch_imu(cfg: dict | None = None, run=subprocess.run) -> None:
-    """Install systemd unit for MPU6050 IMU driver.
-
-    Uses the package ``mpu6050driver`` and default params.
-    """
+def _write_imu_params(cfg: dict | None = None) -> str | None:
+    """Write a minimal params YAML for mpu6050driver and return its path."""
     cfg = cfg or {}
-    cmd = ["ros2", "launch", "mpu6050driver", "mpu6050driver_launch.py",
-           "--ros-args", "-r", "/imu:=/imu/data"]
     freq = cfg.get("frequency")
-    if freq is not None:
-        cmd += ["--ros-args", "-p", f"frequency:={freq}"]
+    try:
+        base = pathlib.Path("/opt/psyche/config")
+        base.mkdir(parents=True, exist_ok=True)
+        path = base / "mpu6050.yaml"
+        lines = [
+            "mpu6050driver_node:",
+            "  ros__parameters:",
+        ]
+        if freq is not None:
+            lines.append(f"    frequency: {int(freq)}")
+        path.write_text("\n".join(lines) + "\n")
+        return str(path)
+    except Exception:
+        return None
+
+
+def launch_imu(cfg: dict | None = None, run=subprocess.run) -> None:
+    """Install systemd unit for MPU6050 IMU driver (via launch)."""
+    params_file = _write_imu_params(cfg)
+    cmd = ["ros2", "launch", "mpu6050driver", "mpu6050driver_launch.py"]
+    if params_file:
+        cmd.append(f"params_file:={params_file}")
     install_service_unit("imu", cmd, run)
 
 
@@ -2014,6 +2034,8 @@ def main() -> None:
         install_qdrant()
     if "neo4j" in services:
         print("[setup] installing Neo4j…")
+        # Ensure desired credentials are in /etc/psyche.env before install sets password
+        ensure_db_env()
         install_neo4j()
     if "voice" in services:
         print("[setup] configuring audio…")
