@@ -167,6 +167,7 @@ def stage_runtime_assets() -> None:
         "topic_list_service.py",
         "retry_exec.py",
         "create_singer.py",
+        "create_health.py",
         "notify_to_voice.py",
         "fortune_notify.py",
         "vision_service.py",
@@ -701,6 +702,28 @@ def ensure_ros2_extra_repos(hostname: str, config: dict, run=subprocess.run) -> 
     if not isinstance(cfg, dict):
         return
     repos = cfg.get("repos", [])
+    # If the Create service is enabled, ensure create_robot and libcreate are present
+    try:
+        host_services = (config.get("hosts", {}).get(hostname, {}).get("services", []) or [])
+    except Exception:
+        host_services = []
+    if "create" in host_services:
+        default_repos = [
+            {"url": "https://github.com/AutonomyLab/create_robot.git", "branch": "jazzy"},
+            {"url": "https://github.com/revyos-ros/libcreate.git", "branch": "fix-std-string"},
+        ]
+        urls = set()
+        for r in (repos or []):
+            if isinstance(r, str):
+                urls.add(r)
+            elif isinstance(r, dict) and "url" in r:
+                urls.add(str(r["url"]))
+        for r in default_repos:
+            if r["url"] not in urls:
+                if isinstance(repos, list):
+                    repos.append(r)
+                else:
+                    repos = [r]
     if not repos:
         return
     src = WORKSPACE / "src"
@@ -1010,6 +1033,15 @@ def install_ros2(run=subprocess.run) -> None:
     # Optionally install CycloneDDS RMW for better performance
     try:
         run(["apt-get", "install", "-y", "ros-jazzy-rmw-cyclonedds-cpp"], check=True)
+    except Exception:
+        pass
+    # Useful core packages for drivers and bringup (best-effort)
+    try:
+        run(["apt-get", "install", "-y", "ros-jazzy-diagnostic-updater", "ros-jazzy-xacro"], check=False)
+    except Exception:
+        pass
+    try:
+        run(["apt-get", "install", "-y", "ros-dev-tools"], check=False)
     except Exception:
         pass
     # Install colcon and rosdep from apt; if colcon fails, pip fallback happens later in build
@@ -1831,7 +1863,18 @@ def launch_create(cfg: dict | None = None, run=subprocess.run) -> None:
         "--min", "1", "--max", "60", "--factor", "1.5", "--jitter", "0.3", "--",
         *inner,
     ]
-    install_service_unit("create", cmd, run)
+    # Ensure the serial USB driver is present and wait for device if specified
+    pre = []
+    dev = params.get("dev") or params.get("port") or "/dev/ttyUSB0"
+    if dev:
+        pre.append("/sbin/modprobe cdc_acm || /sbin/modprobe ch341 || true")
+        pre.append(f"/bin/bash -lc 'for i in $(seq 1 30); do [ -e {dev} ] && break; sleep 2; done'")
+    install_service_unit("create", cmd, run, pre=pre)
+    # Also install a small health reporter so the OLED can show connection state
+    try:
+        launch_create_health(run)
+    except Exception:
+        pass
 
 
 def launch_lidar(cfg: dict | None = None, run=subprocess.run) -> None:
@@ -1886,6 +1929,12 @@ def launch_sensors_status(run=subprocess.run) -> None:
     """Install systemd unit for sensor status summarizer."""
     cmd = [str(VENV_DIR / "bin/python"), script_path("sensor_status.py")]
     install_service_unit("sensors", cmd, run)
+
+
+def launch_create_health(run=subprocess.run) -> None:
+    """Install systemd unit publishing Create connection health."""
+    cmd = [str(VENV_DIR / "bin/python"), script_path("create_health.py"), "--timeout", "5"]
+    install_service_unit("create_status", cmd, run)
 
 
 def launch_vision(cfg: dict | None = None, run=subprocess.run) -> None:
@@ -2097,6 +2146,12 @@ def main() -> None:
     if any(s in services for s in ("hrs04", "display")):
         print("[setup] installing Pi hardware packages…")
         install_pi_hw_packages()
+    # Ensure serial access for Create, if present
+    if "create" in services:
+        try:
+            subprocess.run(["usermod", "-aG", "dialout", SERVICE_USER], check=True)
+        except Exception:
+            pass
     # Apply I2C overlay/env for IMU if configured
     try:
         ensure_imu_env(host, cfg)
@@ -2151,6 +2206,10 @@ def main() -> None:
             print("[setup] launching IMU service…")
             launch_imu(scfg)
             installed.append("imu")
+        elif svc == "create_status":
+            print("[setup] launching Create status service…")
+            launch_create_health()
+            installed.append("create_status")
         elif svc == "sensors":
             print("[setup] launching sensor status service…")
             launch_sensors_status()

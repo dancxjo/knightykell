@@ -12,7 +12,7 @@ image = "ubuntu"
 model="pi5"
 services = ["voice", "logticker", "display", "topics", "notify", "fortune", "vision", "qdrant", "neo4j", "lidar", "imu", "sensors", "asr", "create", "singer"]
 [hosts.cerebellum.display]
-topics = ["/logs", "/topics", "/status/notify", "/status/scan", "/status/imu", "/vision/faces", "/vision/objects", "/vision/face_id"]
+topics = ["/logs", "/topics", "/status/notify", "/status/scan", "/status/imu", "/status/create", "/vision/faces", "/vision/objects", "/vision/face_id"]
 driver = "sh1106"
 width = 128
 height = 64
@@ -82,4 +82,5 @@ repos = [
   { url = "https://github.com/revyos-ros/libcreate.git", branch = "fix-std-string" },
   { url = "https://github.com/clydemcqueen/opencv_cam.git" },
   { url = "https://github.com/ptrmu/ros2_shared.git" },
+  { url = "https://github.com/AutonomyLab/create_robot.git", branch = "jazzy" },
 ]

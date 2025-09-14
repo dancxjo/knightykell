@@ -15,6 +15,7 @@ import os
 import socket
 import pathlib
 import termios
+import json
 
 import rclpy
 from rclpy.node import Node
@@ -105,9 +106,15 @@ class DisplayNode(Node):
         self._last_wifi_ts = 0.0
         self._last_temp = None
         self._last_temp_ts = 0.0
+        self._create_status: str | None = None
         qos = QoSProfile(depth=10)
         for t in self._topics:
             self.create_subscription(String, t, self._make_cb(t), qos)
+        # Optional Create status for bottom bar
+        try:
+            self.create_subscription(String, "status/create", self._on_create_status, qos)
+        except Exception:
+            pass
         # Timers: ticker and page rotation
         self.create_timer(self._tick_interval, self._tick)
         self._splash("Display ready")
@@ -280,7 +287,20 @@ class DisplayNode(Node):
         if temp:
             parts.append(f"CPU:{temp}")
         parts.append(f"RD:{rd}")
+        if self._create_status:
+            cs = self._create_status
+            if cs.lower().startswith("create:"):
+                cs = cs.split(":", 1)[1].strip()
+            if len(cs) > 18:
+                cs = cs[:17] + "…"
+            parts.append(f"CR:{cs}")
         return "  ".join(parts)
+
+    def _on_create_status(self, msg: String) -> None:
+        try:
+            self._create_status = str(getattr(msg, "data", "") or "")
+        except Exception:
+            self._create_status = None
 
     def _safe_hostname(self) -> str:
         try:
