@@ -162,6 +162,7 @@ def stage_runtime_assets() -> None:
         "oled_splash.py",
         "oled_clear.py",
         "fetch_models.py",
+        "git_updater.py",
     ):
         src = scripts_src / name
         if src.exists():
@@ -1043,6 +1044,63 @@ def launch_voice(run=subprocess.run) -> None:
     install_service_unit("voice", cmd, run)
 
 
+def launch_updater(run=subprocess.run) -> None:
+    """Install a systemd service + timer to keep the repo evergreen.
+
+    - Service: runs ``git_updater.py`` under the service user
+    - Timer: runs at boot after a short delay and then every 6 hours
+
+    Skips silently if not running as root (e.g., in tests).
+    """
+    try:
+        if os.geteuid() != 0:
+            return
+    except Exception:
+        return
+    svc_name = "psyche-update.service"
+    tmr_name = "psyche-update.timer"
+    unit_path = SYSTEMD_DIR / svc_name
+    timer_path = SYSTEMD_DIR / tmr_name
+    wrapped = (
+        f"/bin/bash -lc '"
+        f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1; "
+        f"[ -f {HOME_DIR}/ros2_ws/install/setup.bash ] && source {HOME_DIR}/ros2_ws/install/setup.bash >/dev/null 2>&1 || true; "
+        f"{VENV_DIR}/bin/python {script_path('git_updater.py')}"'
+    )
+    svc = f"""[Unit]
+Description=PSYCHE Auto Update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={SERVICE_USER}
+EnvironmentFile=-/etc/psyche.env
+WorkingDirectory={HOME_DIR}
+ExecStart={wrapped}
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+"""
+    timer = """[Unit]
+Description=Run PSYCHE Auto Update periodically
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+"""
+    unit_path.write_text(svc)
+    timer_path.write_text(timer)
+    run(["systemctl", "daemon-reload"], check=False)
+    run(["systemctl", "enable", "--now", tmr_name], check=False)
+
+
 def install_host_tools() -> None:
     """Install small host CLI helpers for easy reprovisioning.
 
@@ -1203,6 +1261,12 @@ def main() -> None:
     ensure_service_env()
     print("[setup] staging baked assets (if any)…")
     stage_assets_seed_locally()
+    # Install updater service + timer (evergreen)
+    print("[setup] ensuring auto-update timer…")
+    try:
+        launch_updater()
+    except Exception:
+        pass
     # Install host helper CLI for idempotent re-provisioning
     install_host_tools()
     # Install embedded defaults and any requested prefetches
