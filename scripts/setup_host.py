@@ -1348,11 +1348,12 @@ def ensure_i2c_bus_overlay(bus: int = 3, pins: str = "pins_4_5") -> None:
             pass
 
 
-def _detect_i2c_bus_for_addr(addr_hex: str = "0x68") -> int | None:
-    """Return first i2c bus number that reports ``addr_hex`` via i2cdetect.
+def _detect_i2c_bus_for_addr(addrs: list[str] | None = None) -> int | None:
+    """Return first i2c bus number that reports any address in ``addrs``.
 
     Best-effort: requires i2c-tools. Returns None on failure.
     """
+    addrs = addrs or ["0x68", "0x69"]
     try:
         import glob, re
         buses = []
@@ -1364,9 +1365,10 @@ def _detect_i2c_bus_for_addr(addr_hex: str = "0x68") -> int | None:
         for b in sorted(buses):
             try:
                 # i2cdetect prints the address without 0x prefix in the grid
-                hexd = addr_hex.lower().replace("0x", "").zfill(2)
+                hexds = [a.lower().replace("0x", "").zfill(2) for a in addrs]
                 out = subprocess.run(["i2cdetect", "-y", str(b)], capture_output=True, text=True, check=False)
-                if hexd in (out.stdout or "").lower():
+                grid = (out.stdout or "").lower()
+                if any(h in grid for h in hexds):
                     return b
             except Exception:
                 continue
@@ -1387,7 +1389,7 @@ def ensure_imu_env(hostname: str, config: dict) -> None:
     if val is None:
         return
     if isinstance(val, str) and val.strip().lower() == "auto":
-        bus = _detect_i2c_bus_for_addr("0x68")
+        bus = _detect_i2c_bus_for_addr(["0x68", "0x69"])  # try both MPU6050 addresses
     else:
         try:
             bus = int(val)
@@ -1875,7 +1877,9 @@ def launch_imu(cfg: dict | None = None, run=subprocess.run) -> None:
     cmd = ["ros2", "launch", "mpu6050driver", "mpu6050driver_launch.py"]
     if params_file:
         cmd.append(f"params_file:={params_file}")
-    install_service_unit("imu", cmd, run)
+    # Ensure i2c-dev is present before starting
+    pre = ["/sbin/modprobe i2c-dev || /usr/sbin/modprobe i2c-dev || true"]
+    install_service_unit("imu", cmd, run, pre=pre)
 
 
 def launch_sensors_status(run=subprocess.run) -> None:
