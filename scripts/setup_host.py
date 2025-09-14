@@ -180,7 +180,13 @@ def stage_runtime_assets() -> None:
     ):
         src = scripts_src / name
         if src.exists():
-            shutil.copy2(src, opt / "scripts" / name)
+            dest = opt / "scripts" / name
+            try:
+                if dest.exists() and dest.samefile(src):
+                    continue
+            except Exception:
+                pass
+            shutil.copy2(src, dest)
     # Make admin-friendly perms
     try:
         subprocess.run(["chgrp", "-R", "sudo", str(opt)], check=False)
@@ -191,7 +197,14 @@ def stage_runtime_assets() -> None:
     # Copy hosts.toml so firstboot/setup can find it under /opt/psyche
     if CONFIG_PATH.exists():
         try:
-            shutil.copy2(CONFIG_PATH, opt / "hosts.toml")
+            dest_cfg = opt / "hosts.toml"
+            try:
+                if dest_cfg.exists() and dest_cfg.samefile(CONFIG_PATH):
+                    pass
+                else:
+                    shutil.copy2(CONFIG_PATH, dest_cfg)
+            except Exception:
+                shutil.copy2(CONFIG_PATH, dest_cfg)
         except PermissionError:
             pass
 
