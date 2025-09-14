@@ -307,7 +307,7 @@ def clone_external_repos(config: dict, run=subprocess.run) -> None:
     """Clone additional Git repos specified under ``[hosts.<name>.repos]``.
 
     Accepts either a list of URLs or a table of {url, dest, branch} entries.
-    Repos are cloned into ``/home/pete/external/<name>`` by default.
+    Repos are cloned into ``/opt/external/<name>`` by default (admin-writable).
 
     Examples:
         >>> cfg = {'hosts': {'h': {'repos': ['https://example.com/repo.git']}}}
@@ -318,7 +318,7 @@ def clone_external_repos(config: dict, run=subprocess.run) -> None:
     repos = host_cfg.get("repos", [])
     if not repos:
         return
-    base = HOME_DIR / "external"
+    base = pathlib.Path("/opt/external")
     try:
         base.mkdir(parents=True, exist_ok=True)
     except Exception:
@@ -333,6 +333,12 @@ def clone_external_repos(config: dict, run=subprocess.run) -> None:
             cmd += ["-b", branch]
         cmd += [url, str(name)]
         run(cmd, check=False)
+        # Admin-friendly perms
+        try:
+            run(["chgrp", "-R", "sudo", str(name)], check=False)
+            run(["chmod", "-R", "g+w", str(name)], check=False)
+        except Exception:
+            pass
     if isinstance(repos, list):
         for item in repos:
             if isinstance(item, str):
@@ -539,6 +545,10 @@ def ensure_shell_env() -> None:
     """
     snippet = f"""
 # Added by PSYCHE provisioning
+# Load service environment (RMW, DOMAIN_ID, etc.) if present
+if [ -f /etc/psyche.env ]; then
+  . /etc/psyche.env
+fi
 if [ -f /opt/ros/jazzy/setup.sh ]; then
   . /opt/ros/jazzy/setup.sh
 fi
@@ -649,7 +659,7 @@ def provision_base(hostname: str, config: dict, services: list[str], *, image: b
     stage_runtime_assets()
     # Clone any extra repos (e.g., external UI libraries)
     try:
-        clone_external_repos(cfg)
+        clone_external_repos(config)
     except Exception:
         pass
     try:
