@@ -1079,6 +1079,20 @@ def install_vision_models(run=subprocess.run) -> None:
         ], check=True)
 
 
+def install_camera_ros_packages(run=subprocess.run) -> None:
+    """Install common ROS camera packages (image transport + calibration)."""
+    try:
+        run([
+            "apt-get", "install", "-y",
+            "ros-jazzy-camera-calibration-parsers",
+            "ros-jazzy-image-transport",
+            "ros-jazzy-image-transport-plugins",
+            "ros-jazzy-image-pipeline",
+        ], check=True)
+    except Exception:
+        pass
+
+
 def install_qdrant(run=subprocess.run) -> None:
     """Install Qdrant vector DB as a system service.
 
@@ -1948,6 +1962,8 @@ def main() -> None:
             install_vision_models()
         except Exception:
             pass
+        print("[setup] installing ROS camera packages…")
+        install_camera_ros_packages()
     if "qdrant" in services:
         print("[setup] installing Qdrant…")
         install_qdrant()

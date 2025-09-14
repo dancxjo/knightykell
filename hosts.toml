@@ -78,4 +78,6 @@ repos = [
   { url = "https://github.com/ROBOTIS-GIT/hls_lfcd_lds_driver.git", branch = "jazzy" },
   { url = "https://github.com/hiwad-aziz/ros2_mpu6050_driver.git" },
   { url = "https://github.com/revyos-ros/libcreate.git", branch = "fix-std-string" },
+  { url = "https://github.com/clydemcqueen/opencv_cam.git" },
+  { url = "https://github.com/ptrmu/ros2_shared.git" },
 ]
