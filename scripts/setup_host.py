@@ -510,9 +510,15 @@ def install_service_unit(name: str, cmd: list[str], run=subprocess.run, pre: lis
         f"[ -f {WORKSPACE}/install/setup.bash ] && source {WORKSPACE}/install/setup.bash >/dev/null 2>&1 || true; "
         f"{' '.join(cmd)}'"
     )
+    # Always ensure the virtualenv exists before starting, but don't fail hard.
+    ensure_venv_pre = (
+        f"if [ ! -x {VENV_DIR}/bin/python ]; then "
+        f"python3 -m venv --system-site-packages {VENV_DIR} || true; fi"
+    )
     # Render optional ExecStartPre lines
+    pre_cmds = [ensure_venv_pre, *(pre or [])]
     pre_lines = "\n".join(
-        f"ExecStartPre=/bin/bash -lc '{p}'" for p in (pre or [])
+        f"ExecStartPre=/bin/bash -lc '{p}'" for p in pre_cmds if p
     )
     unit_content = f"""[Unit]
 Description=PSYCHE {name} service
@@ -1294,6 +1300,13 @@ def _venv_pip_install(packages: list[str], run=subprocess.run) -> None:
         >>> any('example-pkg' in c for cmd in calls for c in cmd)
         True
     """
+    # Ensure the venv exists before attempting to install
+    try:
+        if not (VENV_DIR / "bin/python").exists():
+            run(["python3", "-m", "venv", "--system-site-packages", str(VENV_DIR)], check=True)
+    except Exception:
+        # If venv creation fails, continue so system pip attempt may still work
+        pass
     uv = HOME_DIR / ".local/bin/uv"
     py = str(VENV_DIR / "bin/python")
     pip = str(VENV_DIR / "bin/pip")
