@@ -150,15 +150,37 @@ if [ "${CHROOT_PROVISION:-1}" = "1" ]; then
     sudo mount --bind /dev "$ROOT/dev" || true
     sudo mount --bind /proc "$ROOT/proc" || true
     sudo mount --bind /sys "$ROOT/sys" || true
+    # Ensure DNS works inside chroot (copy host resolv and hosts)
+    if [ -f /etc/resolv.conf ]; then
+      sudo cp /etc/resolv.conf "$ROOT/etc/resolv.conf" || true
+    fi
+    # On systemd-resolved hosts, real resolv content is here
+    if [ -f /run/systemd/resolve/resolv.conf ]; then
+      sudo cp /run/systemd/resolve/resolv.conf "$ROOT/etc/resolv.conf" || true
+    fi
+    if [ -f /etc/hosts ]; then
+      sudo cp /etc/hosts "$ROOT/etc/hosts" || true
+    fi
+    if [ -f /etc/nsswitch.conf ]; then
+      sudo cp /etc/nsswitch.conf "$ROOT/etc/nsswitch.conf" || true
+    fi
     # Minimal tools + run image provisioner, with retry on apt operations
-    sudo chroot "$ROOT" bash -lc '
-      set -e
-      for i in 1 2 3; do apt-get update && apt-get install -y curl ca-certificates python3-venv ffmpeg alsa-utils && break || sleep 5; done
-    '
+    APT_OK=0
+    if sudo chroot "$ROOT" bash -lc 'for i in 1 2 3; do apt-get update && exit 0 || sleep 5; done; exit 1'; then
+      # Install a minimal set of tools; skip venv here to avoid version skew, finish on first boot
+      sudo chroot "$ROOT" bash -lc 'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl ca-certificates ffmpeg alsa-utils || true'
+      APT_OK=1
+    else
+      echo "[build] chroot apt-get update failed; skipping in-image provisioning (will finish on first boot)" >&2
+    fi
     # Determine host name from hosts.toml if not passed explicitly
     HOST_IN=${HOST_IN:-$HOST}
-    echo "[build] chroot provisioning for host $HOST_IN"
-    sudo chroot "$ROOT" python3 /opt/psyche/provision_image.py "$HOST_IN" || true
+    if [ "$APT_OK" -eq 1 ]; then
+      echo "[build] chroot provisioning for host $HOST_IN"
+      sudo chroot "$ROOT" python3 /opt/psyche/provision_image.py "$HOST_IN" || echo "[build] chroot provision_image failed; will finish on first boot" >&2
+    else
+      echo "[build] skipping provision_image (APT not available in chroot)" >&2
+    fi
     sudo umount "$ROOT/dev" || true
     sudo umount "$ROOT/proc" || true
     sudo umount "$ROOT/sys" || true
