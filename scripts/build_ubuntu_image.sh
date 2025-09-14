@@ -164,6 +164,30 @@ if [ "${CHROOT_PROVISION:-1}" = "1" ]; then
     if [ -f /etc/nsswitch.conf ]; then
       sudo cp /etc/nsswitch.conf "$ROOT/etc/nsswitch.conf" || true
     fi
+    # Optionally pin a mirror and add apt resiliency
+    APT_MIRROR=${APT_MIRROR:-http://ports.ubuntu.com/ubuntu-ports}
+    # Map ports.ubuntu.com to its current IP to avoid chroot DNS flakiness
+    MIRROR_HOST=$(printf "%s" "$APT_MIRROR" | sed -E 's#https?://([^/]+)/?.*#\1#')
+    PORTS_IP=$(getent ahostsv4 ports.ubuntu.com | awk 'NR==1{print $1}')
+    if [ -n "$PORTS_IP" ]; then
+      echo "$PORTS_IP ports.ubuntu.com" | sudo tee -a "$ROOT/etc/hosts" >/dev/null || true
+    fi
+    # Rewrite sources to use the mirror if different
+    if [ "$APT_MIRROR" != "http://ports.ubuntu.com/ubuntu-ports" ]; then
+      if [ -f "$ROOT/etc/apt/sources.list" ]; then
+        sudo sed -i "s#https\?://ports.ubuntu.com/ubuntu-ports#$APT_MIRROR#g" "$ROOT/etc/apt/sources.list" || true
+      fi
+      if [ -f "$ROOT/etc/apt/sources.list.d/ubuntu.sources" ]; then
+        sudo sed -i "s#https\?://ports.ubuntu.com/ubuntu-ports#$APT_MIRROR#g" "$ROOT/etc/apt/sources.list.d/ubuntu.sources" || true
+      fi
+    fi
+    # Add apt retries/timeouts
+    sudo mkdir -p "$ROOT/etc/apt/apt.conf.d"
+    printf '%s\n' \
+      'Acquire::Retries "5";' \
+      'Acquire::http::Timeout "30";' \
+      'Acquire::https::Timeout "30";' \
+      | sudo tee "$ROOT/etc/apt/apt.conf.d/99psyche-retries" >/dev/null
     # Minimal tools + run image provisioner, with retry on apt operations
     APT_OK=0
     if sudo chroot "$ROOT" bash -lc 'for i in 1 2 3; do apt-get update && exit 0 || sleep 5; done; exit 1'; then
