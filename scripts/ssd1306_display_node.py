@@ -34,9 +34,11 @@ except Exception:
 class _Page:
     topic: str
     text: str = ""
-    offset: int = 0  # ticker pixel offset
+    offset: int = 0  # ticker pixel offset (legacy horizontal)
     mode: str = "ticker"  # 'ticker' or 'terminal'
     lines: deque[str] | None = None  # for terminal mode
+    vfirst: int = 0  # first visible wrapped line (body vertical scroll)
+    vpix: int = 0    # pixel offset within a line for smooth vertical scroll
 
 
 class DisplayNode(Node):
@@ -63,21 +65,24 @@ class DisplayNode(Node):
         if height:
             kw["height"] = int(height)
         self._device = drv(self._serial, **kw)
-        # Prefer a nicer TrueType mono font if available
-        tt_paths = [
+        # Prefer TrueType fonts; pick sizes for title/body/status
+        tt_candidates = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
             "/usr/share/fonts/truetype/freefont/FreeMono.ttf",
         ]
-        self._font = None
-        for p in tt_paths:
-            try:
-                if os.path.exists(p):
-                    self._font = ImageFont.truetype(p, 12)
-                    break
-            except Exception:
-                continue
-        if self._font is None:
-            self._font = ImageFont.load_default()
+        def load_font(size: int):
+            for p in tt_candidates:
+                try:
+                    if os.path.exists(p):
+                        return ImageFont.truetype(p, size)
+                except Exception:
+                    continue
+            return ImageFont.load_default()
+        self._font_title = load_font(10)
+        self._font_body = load_font(10)
+        self._font_status = load_font(8)
         self._pages: List[_Page] = []
         for t in self._topics:
             mode = "terminal" if t.strip().lower().endswith("/logs") else "ticker"
@@ -122,27 +127,33 @@ class DisplayNode(Node):
         # Advance ticker offset and possibly switch page
         now = time.monotonic()
         cur = self._pages[self._page_index]
-        # Measure text width
-        tw = int(self._font.getlength(cur.text)) if hasattr(self._font, "getlength") else ImageDraw.Draw(Image.new("1", self._device.size)).textlength(cur.text, font=self._font)
-        w, _ = self._device.size
-        if tw > w:
-            cur.offset = (cur.offset + 2) % (tw + 10)
-        else:
-            cur.offset = 0
-        # Bottom status ticker offsets
+        # Compute available body area and advance vertical scroll if needed
+        w, h = self._device.size
         draw = ImageDraw.Draw(Image.new("1", self._device.size))
+        title_h = 12
+        body_line_h = max(8, self._font_body.getsize("A")[1]) if hasattr(self._font_body, "getsize") else 10
+        status_h = max(8, self._font_status.getsize("A")[1]) if hasattr(self._font_status, "getsize") else 9
+        content_h = max(1, h - title_h - (status_h + 2))
+        max_lines = max(1, content_h // body_line_h)
+        if cur.mode == "ticker":
+            wrapped = self._wrap_text_with_font(draw, cur.text or "", w - 4, self._font_body)
+            if len(wrapped) > max_lines:
+                cur.vpix += 1
+                if cur.vpix >= body_line_h:
+                    cur.vpix = 0
+                    cur.vfirst = (cur.vfirst + 1) % (len(wrapped) - max_lines + 1)
+            else:
+                cur.vpix = 0
+                cur.vfirst = 0
+        # Bottom status ticker offsets
         status = self._status_text()
-        stw = int(self._font.getlength(status)) if hasattr(self._font, "getlength") else draw.textlength(status, font=self._font)
+        if self._extra_text:
+            status = f"{status}  •  {self._extra_text}"
+        stw = int(self._font_status.getlength(status)) if hasattr(self._font_status, "getlength") else draw.textlength(status, font=self._font_status)
         if stw > w:
             self._status_off = (self._status_off + 2) % (stw + 20)
         else:
             self._status_off = 0
-        if self._extra_text:
-            etw = int(self._font.getlength(self._extra_text)) if hasattr(self._font, "getlength") else draw.textlength(self._extra_text, font=self._font)
-            if etw > w:
-                self._extra_off = (self._extra_off + 2) % (etw + 20)
-            else:
-                self._extra_off = 0
         if now - self._last_switch >= self._page_seconds:
             self._page_index = (self._page_index + 1) % len(self._pages)
             self._last_switch = now
@@ -152,7 +163,7 @@ class DisplayNode(Node):
         try:
             img = Image.new("1", self._device.size)
             draw = ImageDraw.Draw(img)
-            draw.text((0, 0), text, font=self._font, fill=255)
+            draw.text((0, 0), text, font=self._font_title, fill=255)
             self._device.display(img)
         except Exception:
             pass
@@ -163,70 +174,68 @@ class DisplayNode(Node):
         w, h = self._device.size
         page = self._pages[self._page_index]
         title = f"{page.topic}"
-        # Title bar inverted
-        draw.rectangle((0, 0, w, 14), outline=255, fill=255)
+        # Title bar (slim) inverted
+        title_h = 12
+        draw.rectangle((0, 0, w, title_h), outline=255, fill=255)
         try:
-            tw = int(self._font.getlength(title)) if hasattr(self._font, "getlength") else draw.textlength(title, font=self._font)
+            tw = int(self._font_title.getlength(title)) if hasattr(self._font_title, "getlength") else draw.textlength(title, font=self._font_title)
         except Exception:
             tw = len(title) * 6
         tx = max(0, min(2, (w - tw) // 2))
-        draw.text((tx, 2), title, font=self._font, fill=0)
-        # Bottom info area: two lines (status + extra)
-        line_h = max(8, self._font.getsize("A")[1]) if hasattr(self._font, "getsize") else 12
-        bottom_h = line_h * 2 + 2
-        y_bottom_status = h - bottom_h
-        y_bottom_extra = y_bottom_status + line_h
-        # Separator line above bottom area
-        draw.line((0, y_bottom_status - 2, w, y_bottom_status - 2), fill=255)
-        # Status ticker
+        draw.text((tx, 1), title, font=self._font_title, fill=0)
+        # Bottom info area: single status line (bottom-aligned)
+        status_h = max(8, self._font_status.getsize("A")[1]) if hasattr(self._font_status, "getsize") else 9
+        y_bottom = h - status_h
+        draw.line((0, y_bottom - 2, w, y_bottom - 2), fill=255)
         status = self._status_text()
-        stw = int(self._font.getlength(status)) if hasattr(self._font, "getlength") else draw.textlength(status, font=self._font)
+        if self._extra_text:
+            status = f"{status}  •  {self._extra_text}"
+        stw = int(self._font_status.getlength(status)) if hasattr(self._font_status, "getlength") else draw.textlength(status, font=self._font_status)
         off = self._status_off
         if stw <= w:
-            draw.text((2, y_bottom_status), status, font=self._font, fill=255)
+            draw.text((1, y_bottom), status, font=self._font_status, fill=255)
         else:
-            draw.text((2 - off, y_bottom_status), status, font=self._font, fill=255)
-            draw.text((2 - off + stw + 40, y_bottom_status), status, font=self._font, fill=255)
-        # Extra ticker (optional)
-        extra = self._extra_text
-        if extra:
-            etw = int(self._font.getlength(extra)) if hasattr(self._font, "getlength") else draw.textlength(extra, font=self._font)
-            eoff = self._extra_off
-            if etw <= w:
-                draw.text((2, y_bottom_extra), extra, font=self._font, fill=255)
-            else:
-                draw.text((2 - eoff, y_bottom_extra), extra, font=self._font, fill=255)
-                draw.text((2 - eoff + etw + 40, y_bottom_extra), extra, font=self._font, fill=255)
+            draw.text((1 - off, y_bottom), status, font=self._font_status, fill=255)
+            draw.text((1 - off + stw + 40, y_bottom), status, font=self._font_status, fill=255)
         if page.mode == "terminal" and page.lines is not None:
             # Render a terminal-like scrolling log under the title bar
-            y0 = 16
-            avail_h = (y_bottom_status - 3) - y0
-            line_h = max(8, self._font.getsize("A")[1]) if hasattr(self._font, "getsize") else 12
+            y0 = title_h + 2
+            avail_h = (y_bottom - 3) - y0
+            line_h = max(8, self._font_body.getsize("A")[1]) if hasattr(self._font_body, "getsize") else 10
             max_lines = max(1, avail_h // line_h)
             # Wrap recent lines to fit width
             wrapped: list[str] = []
             for ln in list(page.lines)[-200:]:
-                wrapped.extend(self._wrap_text(draw, ln, w - 4))
+                wrapped.extend(self._wrap_text_with_font(draw, ln, w - 4, self._font_body))
             # Take the last lines that fit
             to_draw = wrapped[-max_lines:]
             y = y0
             for ln in to_draw:
-                draw.text((2, y), ln, font=self._font, fill=255)
+                draw.text((2, y), ln, font=self._font_body, fill=255)
                 y += line_h
         else:
             text = page.text or ""
             if not text:
-                draw.text((2, 18), "(no data)", font=self._font, fill=255)
+                draw.text((2, title_h + 2), "(no data)", font=self._font_body, fill=255)
             else:
-                # Ticker: shift drawing rect to the left by offset
-                y = 16
-                tw = int(self._font.getlength(text)) if hasattr(self._font, "getlength") else draw.textlength(text, font=self._font)
-                if tw <= w:
-                    draw.text((2, y), text, font=self._font, fill=255)
+                # Multi-line body with smooth vertical scroll when needed
+                y0 = title_h + 2
+                avail_h = (y_bottom - 3) - y0
+                line_h = max(8, self._font_body.getsize("A")[1]) if hasattr(self._font_body, "getsize") else 10
+                max_lines = max(1, avail_h // line_h)
+                wrapped = self._wrap_text_with_font(draw, text, w - 4, self._font_body)
+                if len(wrapped) <= max_lines:
+                    y = y0
+                    for ln in wrapped:
+                        draw.text((2, y), ln, font=self._font_body, fill=255)
+                        y += line_h
                 else:
-                    off = page.offset
-                    draw.text((2 - off, y), text, font=self._font, fill=255)
-                    draw.text((2 - off + tw + 20, y), text, font=self._font, fill=255)
+                    s = page.vfirst
+                    vp = page.vpix
+                    y = y0 - vp
+                    for ln in wrapped[s : s + max_lines + 1]:
+                        draw.text((2, y), ln, font=self._font_body, fill=255)
+                        y += line_h
         self._device.display(img)
 
     def _status_text(self) -> str:
@@ -338,7 +347,27 @@ class DisplayNode(Node):
         for w in words[1:]:
             trial = cur + " " + w
             try:
-                tw = int(self._font.getlength(trial)) if hasattr(self._font, "getlength") else draw.textlength(trial, font=self._font)
+                tw = int(self._font_body.getlength(trial)) if hasattr(self._font_body, "getlength") else draw.textlength(trial, font=self._font_body)
+            except Exception:
+                tw = len(trial) * 6
+            if tw <= max_w:
+                cur = trial
+            else:
+                lines.append(cur)
+                cur = w
+        lines.append(cur)
+        return lines
+
+    def _wrap_text_with_font(self, draw: "ImageDraw", text: str, max_w: int, font) -> List[str]:
+        words = text.split()
+        if not words:
+            return [""]
+        lines: List[str] = []
+        cur = words[0]
+        for w in words[1:]:
+            trial = cur + " " + w
+            try:
+                tw = int(font.getlength(trial)) if hasattr(font, "getlength") else draw.textlength(trial, font=font)
             except Exception:
                 tw = len(trial) * 6
             if tw <= max_w:

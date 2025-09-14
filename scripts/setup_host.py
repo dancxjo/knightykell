@@ -1637,6 +1637,15 @@ def main() -> None:
             print("[setup] launching ASR (utterance) service…")
             launch_asr_long(scfg)
             installed.append("asr_long")
+        elif svc == "singer":
+            print("[setup] launching Create singer service…")
+            sc = dict(scfg or {})
+            if not sc.get("port"):
+                cc = get_service_config(host, "create", cfg)
+                if cc and cc.get("port"):
+                    sc["port"] = cc.get("port")
+            launch_singer(sc)
+            installed.append("singer")
         else:
             print(f"Unknown service {svc}")
     print(f"Installed services: {', '.join(installed)}")

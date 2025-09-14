@@ -10,7 +10,7 @@ echo_pin = 27
 [hosts.cerebellum]
 image = "ubuntu"
 model="pi5"
-services = ["voice", "logticker", "display", "topics", "asr", "create"]
+services = ["voice", "logticker", "display", "topics", "create", "singer"]
 [hosts.cerebellum.display]
 topics = ["/asr", "/logs", "/topics"]
 driver = "sh1106"
@@ -20,6 +20,7 @@ port = 1
 address = "0x3C"
 rotate = 0
 h_offset = 2
+extra = "Pete Knightykell"  # optional extra bottom-line text
 [hosts.cerebellum.asr]
 model = "tiny"
 
@@ -30,6 +31,11 @@ launch_file = "bringup.launch.py"  # e.g., bringup.launch.py or minimal.launch.p
 port = "/dev/ttyUSB0"             # serial port for the Create base
 # params = { frame_id = "base_link" }
 # args = ["--ros-args", "-p", "foo:=bar"]
+
+[hosts.cerebellum.singer]
+port = "/dev/ttyUSB0"  # reuse create port
+baud = 57600
+period = 60
 
 [hosts.forebrain]
 services = ["voice", "logticker", "chat", "asr_long"]
