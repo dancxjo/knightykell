@@ -1759,10 +1759,17 @@ def prefetch_whisper_model(name: str = "tiny", run=subprocess.run) -> None:
     if xdg:
         env["XDG_CACHE_HOME"] = xdg
     code = (
-        "import whisper; whisper.load_model(\"" + str(name) + "\"); print(\"ok\")"
+        "import sys;\n"
+        "try:\n"
+        "    import whisper\n"
+        "    whisper.load_model(\"" + str(name) + "\")\n"
+        "    print(\"ok\")\n"
+        "except Exception:\n"
+        "    # Missing package or offline; skip quietly to avoid noisy traces\n"
+        "    pass\n"
     )
     try:
-        run([str(py), "-c", code], check=True, env=env)
+        run([str(py), "-c", code], check=False, env=env)
     except Exception:
         # Best-effort; skip on failure
         pass
@@ -2341,14 +2348,6 @@ def main() -> None:
         pass
     # Install host helper CLI for idempotent re-provisioning
     install_host_tools()
-    # Install embedded defaults and any requested prefetches
-    try:
-        print("[setup] fetching default models (Llama 3.2 1B Instruct, Whisper tiny)…")
-        install_default_assets()
-        print("[setup] prefetching configured assets (hosts.toml)…")
-        ensure_assets_prefetch(host, cfg)
-    except Exception:
-        pass
     # Log summarizer removed; logs are shown directly via logticker -> display
     # Write env for chat service, if present
     if "chat" in services:
@@ -2358,19 +2357,26 @@ def main() -> None:
     if "voice" in services:
         print("[setup] applying voice env…")
         ensure_voice_env(host, cfg)
+    # Install runtime Python packages before model prefetch to avoid noisy errors
     if "voice" in services or "logticker" in services:
         print("[setup] installing voice packages…")
         install_voice_packages()
-    # LLM is dedicated to chat; install only if chat is enabled
     if "chat" in services:
         print("[setup] installing llama-cpp-python…")
         install_llama_cpp()
-    if "chat" in services:
-        print("[setup] installing llama-cpp-python…")
-        install_llama_cpp()
-    if "asr" in services:
+    prefetch_cfg = (cfg.get("hosts", {}).get(host, {}).get("assets", {}).get("prefetch", {}) or {})
+    if "asr" in services or ("whisper" in prefetch_cfg):
+        # Install ASR deps when ASR service is enabled or when hosts.toml requests whisper prefetch
         print("[setup] installing ASR packages…")
         install_asr_packages()
+    # Install embedded defaults and any requested prefetches
+    try:
+        print("[setup] fetching default models (Llama 3.2 1B Instruct, Whisper tiny)…")
+        install_default_assets()
+        print("[setup] prefetching configured assets (hosts.toml)…")
+        ensure_assets_prefetch(host, cfg)
+    except Exception:
+        pass
     if "vision" in services:
         print("[setup] installing vision packages…")
         install_vision_packages()
