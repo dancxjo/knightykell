@@ -77,4 +77,5 @@ i2c_bus = 3  # enable i2c-3 on GPIO 4(SDA)/5(SCL) and use it for the IMU
 repos = [
   { url = "https://github.com/ROBOTIS-GIT/hls_lfcd_lds_driver.git", branch = "jazzy" },
   { url = "https://github.com/hiwad-aziz/ros2_mpu6050_driver.git" },
+  { url = "https://github.com/revyos-ros/libcreate.git", branch = "fix-std-string" },
 ]

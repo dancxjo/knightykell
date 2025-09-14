@@ -1731,7 +1731,8 @@ def launch_imu(cfg: dict | None = None, run=subprocess.run) -> None:
     Uses the package ``mpu6050driver`` and default params.
     """
     cfg = cfg or {}
-    cmd = ["ros2", "launch", "mpu6050driver", "mpu6050driver_launch.py"]
+    cmd = ["ros2", "launch", "mpu6050driver", "mpu6050driver_launch.py",
+           "--ros-args", "-r", "/imu:=/imu/data"]
     freq = cfg.get("frequency")
     if freq is not None:
         cmd += ["--ros-args", "-p", f"frequency:={freq}"]

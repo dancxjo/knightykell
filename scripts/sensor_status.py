@@ -37,7 +37,9 @@ class SensorStatus(Node):
         self._pub_scan = self.create_publisher(String, "status/scan", 10)
         self._pub_imu = self.create_publisher(String, "status/imu", 10)
         self.create_subscription(LaserScan, "scan", self._on_scan, 10)
+        # Subscribe to common IMU topic names
         self.create_subscription(Imu, "imu/data", self._on_imu, 10)
+        self.create_subscription(Imu, "imu", self._on_imu, 10)
 
     def _on_scan(self, msg: LaserScan) -> None:
         ranges = [r for r in msg.ranges if math.isfinite(r) and r > 0.0]
@@ -87,4 +89,3 @@ def main(argv=None) -> None:
 
 if __name__ == "__main__":
     main()
-
