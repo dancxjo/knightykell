@@ -81,11 +81,17 @@ class VisionNode(Node):
         self._prev_gray: np.ndarray | None = None
         interval = 1.0 / max(0.1, float(fps))
         self.create_timer(interval, self._tick)
-        # Qdrant embedded for face vectors (optional)
+        # Qdrant client: prefer server URL, fallback to embedded path
         try:
+            import os
             from qdrant_client import QdrantClient
             from qdrant_client.http.models import Distance, VectorParams
-            self._qdr = QdrantClient(path="/opt/psyche/qdrant")
+            url = os.getenv("QDRANT_URL")
+            if url:
+                self._qdr = QdrantClient(url=url)
+            else:
+                path = os.getenv("QDRANT_PATH", "/opt/psyche/qdrant")
+                self._qdr = QdrantClient(path=path)
             if "faces" not in [c.name for c in self._qdr.get_collections().collections]:
                 self._qdr.recreate_collection(
                     collection_name="faces",

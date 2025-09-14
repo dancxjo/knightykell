@@ -515,6 +515,23 @@ def ensure_service_env() -> None:
         return
 
 
+def ensure_db_env() -> None:
+    """Append local DB connection env to /etc/psyche.env (best-effort)."""
+    env_path = pathlib.Path("/etc/psyche.env")
+    extra = [
+        "QDRANT_URL=http://127.0.0.1:6333",
+        "NEO4J_URI=bolt://127.0.0.1:7687",
+        "NEO4J_USER=neo4j",
+        "NEO4J_PASSWORD=neo4j",
+        "VISION_MODELS_DIR=/opt/psyche/models/vision",
+    ]
+    try:
+        with env_path.open("a") as fh:
+            fh.write("\n" + "\n".join(extra) + "\n")
+    except Exception:
+        pass
+
+
 def ensure_voice_env(hostname: str, config: dict) -> None:
     """Set Piper environment variables from host config.
 
@@ -1005,6 +1022,93 @@ def install_vision_models(run=subprocess.run) -> None:
             "curl", "-fsSL", "-o", str(sface),
             "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx",
         ], check=True)
+
+
+def install_qdrant(run=subprocess.run) -> None:
+    """Install Qdrant vector DB as a system service.
+
+    Downloads the appropriate static binary for the host architecture and
+    sets up a simple config with data under ``/opt/qdrant``.
+    """
+    import platform
+    arch = platform.machine().lower()
+    if "aarch64" in arch or arch == "arm64":
+        target = "aarch64-unknown-linux-gnu"
+    else:
+        target = "x86_64-unknown-linux-gnu"
+    ver = os.getenv("QDRANT_VERSION", "v1.7.3")
+    url = f"https://github.com/qdrant/qdrant/releases/download/{ver}/qdrant-{target}.tar.gz"
+    bin_dir = pathlib.Path("/usr/local/bin")
+    etc = pathlib.Path("/etc/qdrant")
+    data = pathlib.Path("/opt/qdrant")
+    try:
+        etc.mkdir(parents=True, exist_ok=True)
+        data.mkdir(parents=True, exist_ok=True)
+        run(["/bin/bash", "-lc", f"curl -fsSL {url} -o /tmp/qdrant.tgz && tar -xzf /tmp/qdrant.tgz -C /tmp && install -m 0755 /tmp/qdrant/qdrant {bin_dir}/qdrant"], check=True)
+    except Exception:
+        # Best-effort; skip if download fails
+        return
+    cfg = f"""
+log_level: INFO
+service:
+  http_port: 6333
+storage:
+  storage_path: {data}
+""".strip()
+    try:
+        (etc / "config.yaml").write_text(cfg + "\n")
+    except Exception:
+        pass
+
+
+def launch_qdrant(run=subprocess.run) -> None:
+    """Create a systemd unit for qdrant and start it."""
+    unit = f"""[Unit]
+Description=Qdrant Vector Database
+After=network.target
+
+[Service]
+Type=simple
+User={SERVICE_USER}
+EnvironmentFile=-/etc/psyche.env
+ExecStart=/usr/local/bin/qdrant --config-path /etc/qdrant/config.yaml
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+"""
+    path = SYSTEMD_DIR / "psyche-qdrant.service"
+    try:
+        path.write_text(unit)
+        run(["systemctl", "daemon-reload"], check=True)
+        run(["systemctl", "enable", "--now", "psyche-qdrant.service"], check=True)
+    except Exception:
+        pass
+
+
+def install_neo4j(run=subprocess.run) -> None:
+    """Install Neo4j (Community) via apt and set initial password."""
+    try:
+        run(["bash", "-lc", "curl -fsSL https://debian.neo4j.com/neotechnology.gpg.key | gpg --dearmor | tee /usr/share/keyrings/neo4j.gpg >/dev/null"], check=True)
+        run(["bash", "-lc", 'echo "deb [signed-by=/usr/share/keyrings/neo4j.gpg] https://debian.neo4j.com stable 5" | tee /etc/apt/sources.list.d/neo4j.list >/dev/null'], check=True)
+        run(["apt-get", "update"], check=True)
+        run(["apt-get", "install", "-y", "neo4j"], check=True)
+    except Exception:
+        return
+    # Set initial password (ignore if already set)
+    try:
+        run(["neo4j-admin", "dbms", "set-initial-password", "neo4j"], check=False)
+    except Exception:
+        pass
+
+
+def launch_neo4j(run=subprocess.run) -> None:
+    """Enable and start the packaged neo4j service."""
+    try:
+        run(["systemctl", "enable", "--now", "neo4j"], check=True)
+    except Exception:
+        pass
 
 
 def install_voice_packages(run=subprocess.run) -> None:
@@ -1697,6 +1801,12 @@ def main() -> None:
             install_vision_models()
         except Exception:
             pass
+    if "qdrant" in services:
+        print("[setup] installing Qdrant…")
+        install_qdrant()
+    if "neo4j" in services:
+        print("[setup] installing Neo4j…")
+        install_neo4j()
     if "voice" in services:
         print("[setup] configuring audio…")
         ensure_audio(get_audio_config(host, cfg))
@@ -1734,6 +1844,16 @@ def main() -> None:
             print("[setup] launching fortune notifier…")
             launch_fortune(scfg)
             installed.append("fortune")
+        elif svc == "qdrant":
+            print("[setup] launching Qdrant service…")
+            ensure_db_env()
+            launch_qdrant()
+            installed.append("qdrant")
+        elif svc == "neo4j":
+            print("[setup] launching Neo4j service…")
+            ensure_db_env()
+            launch_neo4j()
+            installed.append("neo4j")
         elif svc == "chat":
             print("[setup] launching chat service…")
             launch_chat()
