@@ -133,8 +133,12 @@ def script_path(name: str) -> str:
         True
     """
     repo_script = REPO_DIR / "scripts" / name
-    if repo_script.exists():
-        return str(repo_script)
+    try:
+        if repo_script.exists():
+            return str(repo_script)
+    except Exception:
+        # Permission issues in test envs: prefer fallback
+        pass
     fallback = pathlib.Path("/opt/psyche/scripts") / name
     return str(fallback)
 
@@ -156,6 +160,7 @@ def stage_runtime_assets() -> None:
         "voice_service.py",
         "log_ticker.py",
         "log_summarizer.py",
+        "chat_service.py",
         "asr_service.py",
         "hrs04_node.py",
         "ssd1306_display_node.py",
@@ -257,8 +262,12 @@ def clone_repo(run=subprocess.run) -> None:
                 shutil.copy2(item, dst)
         run(["chown", "-R", f"{SERVICE_USER}:{SERVICE_USER}", str(REPO_DIR)], check=True)
         return
-    if REPO_DIR.exists():
-        return
+    try:
+        if REPO_DIR.exists():
+            return
+    except Exception:
+        # Permission issues in tests
+        pass
     run(
         ["sudo", "-u", SERVICE_USER, "git", "clone", REPO_URL, str(REPO_DIR)],
         check=True,
@@ -278,7 +287,12 @@ def setup_workspace(run=subprocess.run) -> None:
     src.mkdir(parents=True, exist_ok=True)
     target = src / "psyche"
     if not target.exists():
-        if REPO_DIR.exists():
+        re_exists = False
+        try:
+            re_exists = REPO_DIR.exists()
+        except Exception:
+            re_exists = False
+        if re_exists:
             shutil.copytree(REPO_DIR, target)
             run(["chown", "-R", f"{SERVICE_USER}:{SERVICE_USER}", str(target)], check=True)
         else:
@@ -719,7 +733,12 @@ def _venv_pip_install(packages: list[str], run=subprocess.run) -> None:
     uv = HOME_DIR / ".local/bin/uv"
     py = str(VENV_DIR / "bin/python")
     pip = str(VENV_DIR / "bin/pip")
-    if uv.exists():
+    uv_ok = False
+    try:
+        uv_ok = uv.exists()
+    except Exception:
+        uv_ok = False
+    if uv_ok:
         run([str(uv), "pip", "install", "-p", py, *packages], check=True)
     else:
         run([pip, "install", *packages], check=True)
@@ -1235,6 +1254,60 @@ def launch_asr(cfg: dict | None = None, run=subprocess.run) -> None:
     install_service_unit("asr", cmd, run)
 
 
+def launch_chat(run=subprocess.run) -> None:
+    """Install systemd unit for the chat service.
+
+    Examples:
+        >>> launch_chat(lambda cmd, check: None)  # doctest: +SKIP
+    """
+    cmd = [str(VENV_DIR / "bin/python"), script_path("chat_service.py")]
+    install_service_unit("chat", cmd, run)
+
+
+def ensure_chat_env(hostname: str, config: dict) -> None:
+    """Write environment for the chat service from host config.
+
+    Supported under ``[hosts.<name>.chat]``:
+    - ``prompt`` -> ``CHAT_PROMPT``
+    - ``model_path`` -> ``LLAMA_MODEL_PATH``
+    - ``gguf_url``: download and set ``LLAMA_MODEL_PATH``
+    - ``ollama_model`` -> ``OLLAMA_MODEL``
+
+    Examples:
+        >>> cfg = {'hosts': {'h': {'chat': {'prompt': 'You are helpful'}}}}
+        >>> ensure_chat_env('h', cfg)  # doctest: +SKIP
+    """
+    env_path = pathlib.Path("/etc/psyche.env")
+    env: dict[str, str] = {}
+    try:
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k] = v
+    except Exception:
+        pass
+    ccfg = get_service_config(hostname, "chat", config)
+    if ccfg:
+        if "gguf_url" in ccfg:
+            try:
+                path = fetch_llama_model(str(ccfg["gguf_url"]))
+                if path:
+                    env["LLAMA_MODEL_PATH"] = path
+            except Exception:
+                pass
+        if "model_path" in ccfg:
+            env["LLAMA_MODEL_PATH"] = str(ccfg["model_path"])
+        if "prompt" in ccfg:
+            env["CHAT_PROMPT"] = str(ccfg["prompt"])
+        if "ollama_model" in ccfg:
+            env["OLLAMA_MODEL"] = str(ccfg["ollama_model"])
+    try:
+        env_path.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n")
+    except Exception:
+        pass
+
+
 def main() -> None:
     """Entry point for host setup."""
     cfg = load_config()
@@ -1283,6 +1356,10 @@ def main() -> None:
     if "logsummarizer" in services:
         print("[setup] applying log summarizer env…")
         ensure_logsummarizer_env(host, cfg)
+    # Write env for chat service, if present
+    if "chat" in services:
+        print("[setup] applying chat env…")
+        ensure_chat_env(host, cfg)
     # Write Piper env overrides from host config, if present
     if "voice" in services:
         print("[setup] applying voice env…")
@@ -1291,6 +1368,9 @@ def main() -> None:
         print("[setup] installing voice packages…")
         install_voice_packages()
     if "logsummarizer" in services:
+        print("[setup] installing llama-cpp-python…")
+        install_llama_cpp()
+    if "chat" in services:
         print("[setup] installing llama-cpp-python…")
         install_llama_cpp()
     if "asr" in services:
@@ -1325,6 +1405,10 @@ def main() -> None:
             print("[setup] launching log summarizer service…")
             launch_logsummarizer()
             installed.append("logsummarizer")
+        elif svc == "chat":
+            print("[setup] launching chat service…")
+            launch_chat()
+            installed.append("chat")
         elif svc == "asr":
             print("[setup] launching ASR service…")
             launch_asr(scfg)

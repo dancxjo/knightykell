@@ -101,6 +101,7 @@ Services
 - `psyche-voice.service`: Queue text‑to‑speech from the `voice` topic
 - `psyche-logticker.service`: Publish journal lines to the `logs` topic
 - `psyche-logsummarizer.service`: Summarize recent `logs` and publish concise updates to `voice`
+- `psyche-chat.service`: Maintain a chat conversation; reacts to `asr` and publishes replies to `voice`
 - `psyche-asr.service`: Publish Whisper transcripts on the `asr` topic
 - `psyche-hrs04.service`: Ultrasonic sensor node (pins from host config)
 - `psyche-display.service`: SSD1306 OLED topic display
@@ -139,7 +140,7 @@ Provisioning helpers
 --------------------
 
 - llama.cpp runtime: installer adds `llama-cpp-python` to the service venv.
-- Model download: set `hosts.<name>.logsummarizer.gguf_url` to fetch a `.gguf` into `/opt/llama/models` and write `LLAMA_MODEL_PATH` automatically.
+- Model download: set `hosts.<name>.logsummarizer.gguf_url` or `hosts.<name>.chat.gguf_url` to fetch a `.gguf` into `/opt/llama/models` and write `LLAMA_MODEL_PATH` automatically.
 - Env from config: set options under `[hosts.<name>.logsummarizer]` (e.g., `interval`, `max_lines`, `threads`, `ctx`, `grammar_path`, `top_k`, `temp`, etc.).
 
 Notes
@@ -227,3 +228,24 @@ llama = ["tinyllama-q4_k_m", "https://example.com/OtherModel.gguf"]
 ```
 
 Provisioning reads this and fetches at install time.
+
+Chat Service
+------------
+
+The chat service keeps a running conversation in memory and responds to voice input:
+
+- Subscribes: `asr` (Whisper transcripts)
+- Publishes: `voice` (assistant reply for TTS), `chat` (assistant reply text)
+- Backends: Ollama (`OLLAMA_MODEL`) or llama.cpp (`LLAMA_MODEL_PATH`)
+
+Configure via `hosts.toml`:
+
+```
+[hosts.cerebellum]
+services = ["voice", "asr", "chat"]
+[hosts.cerebellum.chat]
+prompt = "You are a concise robot assistant."
+# Optional backend settings:
+# ollama_model = "llama3.2:1b-instruct"
+# gguf_url = "https://huggingface.co/TheBloke/Meta-Llama-3.2-1B-Instruct-GGUF/resolve/main/Meta-Llama-3.2-1B-Instruct.Q4_K_M.gguf?download=true"
+```

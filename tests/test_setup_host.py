@@ -25,6 +25,7 @@ from scripts.setup_host import (
     install_asr_packages,
     install_llama_cpp,
     launch_logsummarizer,
+    launch_chat,
     fetch_llama_model,
     ensure_assets_prefetch,
 )
@@ -238,6 +239,20 @@ def test_launch_logsummarizer_creates_systemd_unit(monkeypatch, tmp_path):
     assert ["systemctl", "enable", "--now", "psyche-logsummarizer.service"] in calls
 
 
+def test_launch_chat_creates_systemd_unit(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr("scripts.setup_host.SYSTEMD_DIR", tmp_path)
+
+    def fake_run(cmd, check):
+        calls.append(cmd)
+
+    launch_chat(fake_run)
+    unit = tmp_path / "psyche-chat.service"
+    assert unit.exists()
+    assert "chat_service.py" in unit.read_text()
+    assert ["systemctl", "enable", "--now", "psyche-chat.service"] in calls
+
+
 def test_launch_asr_creates_systemd_unit(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr("scripts.setup_host.SYSTEMD_DIR", tmp_path)
@@ -274,7 +289,7 @@ def test_fetch_llama_model_invokes_curl(tmp_path, monkeypatch):
     assert calls and calls[0][0] == "curl"
 
 
-def test_ensure_assets_prefetch_downloads(monkeypatch):
+def test_ensure_assets_prefetch_downloads(tmp_path, monkeypatch):
     calls = []
 
     def fake_run(cmd, check):
@@ -396,3 +411,24 @@ def test_main_launches_asr(monkeypatch):
     from scripts.setup_host import main
     main()
     assert called['pkg'] and called['cfg']['model'] == 'small'
+
+def test_main_launches_chat(monkeypatch):
+    config = {"hosts": {"brainstem": {"services": ["chat"]}}}
+    monkeypatch.setattr("scripts.setup_host.load_config", lambda: config)
+    monkeypatch.setattr("scripts.setup_host.socket.gethostname", lambda: "brainstem")
+    monkeypatch.setattr("scripts.setup_host.ensure_service_user", lambda: None)
+    monkeypatch.setattr("scripts.setup_host.clone_repo", lambda: None)
+    monkeypatch.setattr("scripts.setup_host.setup_workspace", lambda: None)
+    monkeypatch.setattr("scripts.setup_host.ensure_ssh_keys", lambda: None)
+    monkeypatch.setattr("scripts.setup_host.install_ros2", lambda: None)
+    monkeypatch.setattr("scripts.setup_host.install_zeno", lambda: None)
+    called = {"pkg": False, "chat": False}
+    monkeypatch.setattr(
+        "scripts.setup_host.install_llama_cpp", lambda: called.__setitem__("pkg", True)
+    )
+    monkeypatch.setattr(
+        "scripts.setup_host.launch_chat", lambda: called.__setitem__("chat", True)
+    )
+    from scripts.setup_host import main
+    main()
+    assert called["pkg"] and called["chat"]
