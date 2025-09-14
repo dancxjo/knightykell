@@ -1,4 +1,4 @@
-.PHONY: image ubuntu-images test provision
+.PHONY: image ubuntu-images test provision deprovision
 
 # Build Raspberry Pi images for hosts defined in hosts.toml.
 # Usage: make image HOSTS="brainstem forebrain" (default builds all)
@@ -16,3 +16,7 @@ test:
 # Provision the current host (requires sudo). Uses the current repo as source.
 provision:
 	@sudo -E env PSYCHE_SRC="$(shell pwd)" python3 scripts/setup_host.py
+
+# Remove installed services, env, and runtime files from the host.
+deprovision:
+	@sudo -E python3 scripts/deprovision.py
