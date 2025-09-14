@@ -1118,14 +1118,18 @@ def install_camera_ros_packages(run=subprocess.run) -> None:
 def install_fortune_packages(run=subprocess.run) -> None:
     """Install fortune databases for variety (best-effort)."""
     try:
-        run([
-            "apt-get", "install", "-y",
+        # Install only packages available on this distro to avoid noisy errors
+        candidates = [
             "fortune-mod",
             "fortunes",
             "fortunes-min",
             "fortunes-off",
             "fortunes-bofh-excuses",
-        ], check=False)
+            "bofh-excuses",
+        ]
+        run(["apt-get", "update"], check=False)
+        for pkg in candidates:
+            run(["bash", "-lc", f"apt-cache show {pkg} >/dev/null 2>&1 && apt-get install -y {pkg} || true"], check=False)
     except Exception:
         pass
 
