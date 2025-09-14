@@ -1666,7 +1666,17 @@ def install_pi_hw_packages(run=subprocess.run) -> None:
     """
     # Best-effort apt packages; do not bail if unavailable on this distro
     try:
+        # Refresh package lists to avoid missing headers due to stale caches
+        run(["apt-get", "update"], check=False)
         run(["apt-get", "install", "-y", "python3-gpiozero", "python3-lgpio", "i2c-tools", "libi2c-dev", "python3-pil"], check=True)
+    except Exception:
+        pass
+    # Verify that the I2C development headers are present; if missing, attempt a targeted install
+    try:
+        hdr = pathlib.Path("/usr/include/i2c/smbus.h")
+        if not hdr.exists():
+            run(["apt-get", "update"], check=False)
+            run(["apt-get", "install", "-y", "libi2c-dev"], check=False)
     except Exception:
         pass
     # Ensure service user can access GPIO and I2C devices (best-effort)
