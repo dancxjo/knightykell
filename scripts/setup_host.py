@@ -274,6 +274,50 @@ def clone_repo(run=subprocess.run) -> None:
     )
 
 
+def clone_external_repos(config: dict, run=subprocess.run) -> None:
+    """Clone additional Git repos specified under ``[hosts.<name>.repos]``.
+
+    Accepts either a list of URLs or a table of {url, dest, branch} entries.
+    Repos are cloned into ``/home/pete/external/<name>`` by default.
+
+    Examples:
+        >>> cfg = {'hosts': {'h': {'repos': ['https://example.com/repo.git']}}}
+        >>> clone_external_repos(cfg, lambda cmd, check: None)  # doctest: +SKIP
+    """
+    host = socket.gethostname()
+    host_cfg = config.get("hosts", {}).get(host, {})
+    repos = host_cfg.get("repos", [])
+    if not repos:
+        return
+    base = HOME_DIR / "external"
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return
+    def _clone(url: str, dest: pathlib.Path | None = None, branch: str | None = None) -> None:
+        name = dest or base / pathlib.Path(url).stem.replace(".git", "")
+        name = pathlib.Path(name)
+        if name.exists():
+            return
+        cmd = ["sudo", "-u", SERVICE_USER, "git", "clone"]
+        if branch:
+            cmd += ["-b", branch]
+        cmd += [url, str(name)]
+        run(cmd, check=False)
+    if isinstance(repos, list):
+        for item in repos:
+            if isinstance(item, str):
+                _clone(item)
+            elif isinstance(item, dict) and "url" in item:
+                dest = pathlib.Path(item.get("dest")) if item.get("dest") else None
+                _clone(str(item["url"]), dest, str(item.get("branch")) if item.get("branch") else None)
+    elif isinstance(repos, dict):
+        for _, entry in repos.items():
+            if isinstance(entry, dict) and "url" in entry:
+                dest = pathlib.Path(entry.get("dest")) if entry.get("dest") else None
+                _clone(str(entry["url"]), dest, str(entry.get("branch")) if entry.get("branch") else None)
+
+
 def setup_workspace(run=subprocess.run) -> None:
     """Create and build the ROS2 workspace.
 
@@ -481,6 +525,11 @@ def provision_base(hostname: str, config: dict, services: list[str], *, image: b
     except Exception:
         pass
     stage_runtime_assets()
+    # Clone any extra repos (e.g., external UI libraries)
+    try:
+        clone_external_repos(cfg)
+    except Exception:
+        pass
     try:
         ensure_ssh_keys()
     except Exception:
@@ -537,6 +586,95 @@ def _detect_usb_audio_card() -> int | None:
             except ValueError:
                 continue
     return None
+
+
+def ensure_ros2_extra_repos(hostname: str, config: dict, run=subprocess.run) -> None:
+    """Clone additional ROS 2 repos into the workspace and (re)build.
+
+    Reads optional ``[hosts.<name>.ros2]`` table with:
+    - ``repos``: list of URLs or dicts {url, branch?, dest?}
+    - ``domain_id``: optional ROS_DOMAIN_ID
+    - ``rmw``: optional RMW implementation (e.g., ``rmw_cyclonedds_cpp``)
+
+    Clones into ``$WORKSPACE/src/<dest or repo-name>`` if missing, then runs a
+    best-effort ``rosdep install`` and ``colcon build``. All steps are
+    tolerant to errors in test/non-root environments.
+    """
+    cfg = config.get("hosts", {}).get(hostname, {}).get("ros2", {})
+    if not isinstance(cfg, dict):
+        return
+    repos = cfg.get("repos", [])
+    if not repos:
+        return
+    src = WORKSPACE / "src"
+    try:
+        src.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+    def _clone(url: str, dest: pathlib.Path | None = None, branch: str | None = None) -> None:
+        name = pathlib.Path(url).stem
+        if name.endswith(".git"):
+            name = name[:-4]
+        target = dest or (src / name)
+        if target.exists():
+            return
+        cmd = ["sudo", "-u", SERVICE_USER, "git", "clone"]
+        if branch:
+            cmd += ["-b", branch]
+        cmd += [url, str(target)]
+        run(cmd, check=False)
+
+    if isinstance(repos, list):
+        for item in repos:
+            try:
+                if isinstance(item, str):
+                    _clone(item)
+                elif isinstance(item, dict) and "url" in item:
+                    dest = pathlib.Path(item.get("dest")) if item.get("dest") else None
+                    branch = str(item.get("branch")) if item.get("branch") else None
+                    _clone(str(item["url"]), dest, branch)
+            except Exception:
+                continue
+    # Attempt rosdep + build (best-effort)
+    try:
+        run([
+            "bash", "-lc",
+            f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && rosdep install --from-paths src --ignore-src -r -y",
+        ], check=False)
+    except Exception:
+        pass
+    try:
+        run([
+            "sudo", "-u", SERVICE_USER, "bash", "-lc",
+            f"source /opt/ros/jazzy/setup.bash >/dev/null 2>&1 && cd {WORKSPACE} && colcon build",
+        ], check=False)
+    except Exception:
+        pass
+
+
+def ensure_ros_network_env(hostname: str, config: dict) -> None:
+    """Optionally set ROS networking env (RMW, ROS_DOMAIN_ID) from config."""
+    env_path = pathlib.Path("/etc/psyche.env")
+    env: dict[str, str] = {}
+    try:
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k] = v
+    except Exception:
+        pass
+    cfg = config.get("hosts", {}).get(hostname, {}).get("ros2", {})
+    if isinstance(cfg, dict):
+        if "rmw" in cfg:
+            env["RMW_IMPLEMENTATION"] = str(cfg["rmw"])
+        if "domain_id" in cfg:
+            env["ROS_DOMAIN_ID"] = str(cfg["domain_id"])
+    try:
+        env_path.write_text("\n".join(f"{k}={v}" for k, v in env.items()) + "\n")
+    except Exception:
+        pass
 
 
 def ensure_audio(cfg: dict | None = None, run=subprocess.run) -> None:
@@ -1206,6 +1344,36 @@ def launch_asr_long(cfg: dict | None = None, run=subprocess.run) -> None:
     install_service_unit("asr_long", cmd, run)
 
 
+def launch_create(cfg: dict | None = None, run=subprocess.run) -> None:
+    """Install systemd unit to bring up the iRobot Create base.
+
+    Config options under ``[hosts.<name>.create]``:
+    - ``package``: ROS 2 package name providing a launch file (e.g., ``create_robot``)
+    - ``launch_file``: Launch file (e.g., ``bringup.launch.py``)
+    - ``params``: Table of key/value pairs turned into ``key:=value`` args
+    - ``args``: List of additional CLI args (strings)
+    - ``port``: Convenience serial port param (merged into params as ``port``/``serial_port``)
+
+    Falls back to ``ros2 run create_driver create_driver_node`` if no launch is given.
+    """
+    cfg = cfg or {}
+    pkg = cfg.get("package")
+    lfile = cfg.get("launch_file")
+    params = cfg.get("params") or {}
+    extra_args = list(map(str, (cfg.get("args") or [])))
+    port = cfg.get("port", "/dev/ttyUSB0")
+    if "port" not in params:
+        params["port"] = port
+    # Some stacks use serial_port rather than port
+    params.setdefault("serial_port", port)
+    kv = [f"{k}:={v}" for k, v in params.items()]
+    if pkg and lfile:
+        cmd = ["ros2", "launch", str(pkg), str(lfile), *kv, *extra_args]
+    else:
+        cmd = ["ros2", "run", "create_driver", "create_driver_node", *kv, *extra_args]
+    install_service_unit("create", cmd, run)
+
+
 def launch_chat(run=subprocess.run) -> None:
     """Install systemd unit for the chat service.
 
@@ -1286,6 +1454,12 @@ def main() -> None:
     stage_runtime_assets()
     print("[setup] building ROS 2 workspace…")
     setup_workspace()
+    # Pull extra ROS 2 repos (e.g., AutonomyLab create) and rebuild
+    print("[setup] ensuring extra ROS 2 repos…")
+    try:
+        ensure_ros2_extra_repos(host, cfg)
+    except Exception:
+        pass
     print("[setup] ensuring SSH keys…")
     ensure_ssh_keys()
     print("[setup] ensuring Python env + zenoh…")
@@ -1294,6 +1468,7 @@ def main() -> None:
     print("[setup] writing shell + service env…")
     ensure_shell_env()
     ensure_service_env()
+    ensure_ros_network_env(host, cfg)
     print("[setup] staging baked assets (if any)…")
     stage_assets_seed_locally()
     # Install updater service + timer (evergreen)

@@ -10,7 +10,7 @@ echo_pin = 27
 [hosts.cerebellum]
 image = "ubuntu"
 model="pi5"
-services = ["voice", "logticker", "display", "asr"]
+services = ["voice", "logticker", "display", "asr", "create"]
 [hosts.cerebellum.display]
 topics = ["/asr", "/logs"]
 driver = "sh1106"
@@ -22,6 +22,14 @@ rotate = 0
 h_offset = 2
 [hosts.cerebellum.asr]
 model = "tiny"
+
+[hosts.cerebellum.create]
+# Adjust to match the AutonomyLab stack you’ve cloned
+package = "create_robot"           # e.g., create_robot or create_bringup
+launch_file = "bringup.launch.py"  # e.g., bringup.launch.py or minimal.launch.py
+port = "/dev/ttyUSB0"             # serial port for the Create base
+# params = { frame_id = "base_link" }
+# args = ["--ros-args", "-p", "foo:=bar"]
 
 [hosts.forebrain]
 services = ["voice", "logticker", "chat", "asr_long"]
