@@ -1313,13 +1313,23 @@ def _venv_pip_install(packages: list[str], run=subprocess.run) -> None:
         >>> any('example-pkg' in c for cmd in calls for c in cmd)
         True
     """
-    # Ensure the venv exists before attempting to install
+    # Ensure the venv exists before attempting to install; if not, try to
+    # install python3-venv and create it.
     try:
         if not (VENV_DIR / "bin/python").exists():
+            try:
+                run(["apt-get", "update"], check=False)
+                run(["apt-get", "install", "-y", "python3-venv"], check=False)
+            except Exception:
+                pass
             run(["python3", "-m", "venv", "--system-site-packages", str(VENV_DIR)], check=True)
     except Exception:
-        # If venv creation fails, continue so system pip attempt may still work
-        pass
+        # If venv creation still fails, fall back to system pip install as a last resort
+        try:
+            run(["python3", "-m", "pip", "install", *packages], check=False)
+        except Exception:
+            pass
+        return
     uv = HOME_DIR / ".local/bin/uv"
     py = str(VENV_DIR / "bin/python")
     pip = str(VENV_DIR / "bin/pip")
@@ -1365,6 +1375,24 @@ def install_vision_packages(run=subprocess.run) -> None:
             "qdrant-client",
             "neo4j",
         ], run)
+    except Exception:
+        pass
+
+
+def verify_venv_imports(modules: list[str], run=subprocess.run) -> None:
+    """Best-effort import check for modules inside the service venv.
+
+    Runs ``python -c 'import m1, m2'`` using the venv interpreter. Non-fatal.
+
+    Examples:
+        >>> verify_venv_imports(['sys'])  # doctest: +SKIP
+    """
+    py = VENV_DIR / "bin/python"
+    if not py.exists():
+        return
+    code = "; ".join(f"import {m}" for m in modules)
+    try:
+        run([str(py), "-c", code], check=False)
     except Exception:
         pass
 
@@ -2415,6 +2443,10 @@ def main() -> None:
     print("[setup] staging repo and runtime assets…")
     clone_repo()
     stage_runtime_assets()
+    # Ensure Python tooling/venv early so any subsequent pip installs land in the venv
+    print("[setup] ensuring Python env + zenoh…")
+    ensure_python_env()
+    install_zeno()
     # Pull extra ROS 2 repos (e.g., AutonomyLab create) and patch before first build
     print("[setup] ensuring extra ROS 2 repos…")
     try:
@@ -2428,13 +2460,12 @@ def main() -> None:
             install_pi_hw_packages()
         except Exception:
             pass
+        # Verify required Python modules are importable in the venv
+        verify_venv_imports(["luma.oled", "PIL"])
     print("[setup] building ROS 2 workspace…")
     setup_workspace()
     print("[setup] ensuring SSH keys…")
     ensure_ssh_keys()
-    print("[setup] ensuring Python env + zenoh…")
-    ensure_python_env()
-    install_zeno()
     print("[setup] writing shell + service env…")
     ensure_shell_env()
     ensure_service_env()
