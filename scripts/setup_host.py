@@ -713,6 +713,12 @@ def ensure_ros2_extra_repos(hostname: str, config: dict, run=subprocess.run) -> 
     except Exception:
         pass
     # Attempt rosdep + build (best-effort)
+    # Some third-party drivers (e.g., HLDS LDS) expect Boost::system.
+    # Ensure Boost dev headers are available even if rosdep skips.
+    try:
+        run(["apt-get", "install", "-y", "libboost-dev", "libboost-system-dev"], check=False)
+    except Exception:
+        pass
     try:
         run([
             "bash", "-lc",
