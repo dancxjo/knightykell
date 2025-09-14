@@ -54,7 +54,10 @@ class AsrNode(Node):
         self._vad = webrtcvad.Vad(2)
         self._frames: deque[bytes] = deque()
         self._buffer = bytearray()
-        self._queue: queue.Queue[bytes] = queue.Queue()
+        # Queue of complete utterance bytes for Whisper
+        self._utt_q: queue.Queue[bytes] = queue.Queue()
+        # Queue of captured frames for VAD + PCM publishing (bytes per frame)
+        self._frame_q: queue.Queue[bytes] = queue.Queue(maxsize=256)
         # Use a raw stream so VAD receives 16-bit PCM bytes.
         # blocksize must be specified in FRAMES, not bytes. Using bytes here
         # doubles the duration and triggers webrtcvad "Error while processing frame".
@@ -66,55 +69,76 @@ class AsrNode(Node):
             callback=self._callback,
         )
         self._stream.start()
-        threading.Thread(target=self._worker, daemon=True).start()
+        # Background workers: frame/VAD processing and utterance ASR
+        threading.Thread(target=self._frame_worker, daemon=True).start()
+        threading.Thread(target=self._utt_worker, daemon=True).start()
 
     def _callback(self, indata: bytes, frames: int, time, status) -> None:
-        """Collect voiced frames based on VAD."""
+        """Audio callback: enqueue frame quickly; avoid heavy work here."""
         if status:
-            self.get_logger().warning(str(status))
-        is_speech = self._vad.is_speech(indata, SAMPLE_RATE)
-        # Publish raw PCM frame (int16) for downstream consumers
+            try:
+                self.get_logger().warning(str(status))
+            except Exception:
+                pass
         try:
-            arr = np.frombuffer(indata, np.int16)
-            msg_pcm = Int16MultiArray()
-            msg_pcm.data = arr.tolist()
-            self._pub_frames.publish(msg_pcm)
-        except Exception:
+            self._frame_q.put_nowait(bytes(indata))
+        except queue.Full:
+            # Drop frame if overloaded
             pass
-        # Publish VAD state for each frame
-        try:
-            self._pub_vad.publish(Bool(data=bool(is_speech)))
-        except Exception:
-            pass
-        if is_speech:
-            self._buffer.extend(indata)
-            self._frames.clear()
-        else:
-            self._frames.append(indata)
-            if len(self._frames) * FRAME_DURATION > 800:
-                if self._buffer:
-                    # Emit full utterance PCM for accurate downstream ASR
-                    try:
-                        utt = np.frombuffer(self._buffer, np.int16)
-                        msg_utt = Int16MultiArray()
-                        msg_utt.data = utt.tolist()
-                        self._pub_utter.publish(msg_utt)
-                    except Exception:
-                        pass
-                    self._queue.put(bytes(self._buffer))
-                    self._buffer.clear()
-                self._frames.clear()
 
-    def _worker(self) -> None:
-        """Process queued audio chunks and publish transcripts."""
+    def _frame_worker(self) -> None:
+        """Process audio frames: VAD, publish PCM/vad, segment utterances."""
         while rclpy.ok():
-            audio = self._queue.get()
-            arr = np.frombuffer(audio, np.int16).astype(np.float32) / 32768.0
-            result = self._model.transcribe(arr, fp16=False)
-            msg = String()
-            msg.data = result.get("text", "").strip()
-            if msg.data:
-                self._pub.publish(msg)
+            frame = self._frame_q.get()
+            try:
+                # VAD decision
+                is_speech = self._vad.is_speech(frame, SAMPLE_RATE)
+            except Exception:
+                is_speech = False
+            # Publish frame PCM and VAD
+            try:
+                arr = np.frombuffer(frame, np.int16)
+                self._pub_frames.publish(Int16MultiArray(data=arr.tolist()))
+                self._pub_vad.publish(Bool(data=bool(is_speech)))
+            except Exception:
+                pass
+            # Segment utterances
+            if is_speech:
+                self._buffer.extend(frame)
+                self._frames.clear()
+            else:
+                self._frames.append(frame)
+                if len(self._frames) * FRAME_DURATION > 800:
+                    if self._buffer:
+                        # Emit full utterance PCM for accurate downstream ASR
+                        try:
+                            utt_arr = np.frombuffer(self._buffer, np.int16)
+                            self._pub_utter.publish(Int16MultiArray(data=utt_arr.tolist()))
+                        except Exception:
+                            pass
+                        try:
+                            self._utt_q.put_nowait(bytes(self._buffer))
+                        except Exception:
+                            pass
+                        self._buffer.clear()
+                    self._frames.clear()
+
+    def _utt_worker(self) -> None:
+        """Transcribe queued utterances and publish text."""
+        while rclpy.ok():
+            audio = self._utt_q.get()
+            try:
+                arr = np.frombuffer(audio, np.int16).astype(np.float32) / 32768.0
+                result = self._model.transcribe(arr, fp16=False)
+                text = (result.get("text", "") or "").strip()
+                if not text:
+                    continue
+                self._pub.publish(String(data=text))
+            except Exception as e:
+                try:
+                    self.get_logger().warning(f"asr error: {e}")
+                except Exception:
+                    pass
 
 
 def main(args: list[str] | None = None) -> None:
