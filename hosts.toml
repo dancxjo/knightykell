@@ -80,7 +80,7 @@ backend = "llama"
 # Smaller, fast option (2B Instruct, Q4_K_M):
 gguf_url = "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf"
 # Optional Ollama settings (disabled when backend = "llama"):
-# ollama_model = "gpt_oss:20b"
+# ollama_model = "gpt-oss"
 # timeout = 30
 # Optional Hugging Face Transformers backend (CPU/GPU via torch). Uncomment to use:
 # backend = "hf"
