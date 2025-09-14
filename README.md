@@ -52,7 +52,7 @@ Configuration
 ```
 [hosts]
 [hosts.brainstem]
-services = ["voice", "logticker", "hrs04", "display", "asr"]
+services = ["voice", "logticker", "logsummarizer", "hrs04", "display", "asr"]
 [hosts.brainstem.hrs04]
 trig_pin = 17
 echo_pin = 27
@@ -80,10 +80,27 @@ Services
 --------
 
 - `psyche-voice.service`: Queue text‑to‑speech from the `voice` topic
-- `psyche-logticker.service`: Publish journal lines to the `voice` topic
+- `psyche-logticker.service`: Publish journal lines to the `logs` topic
+- `psyche-logsummarizer.service`: Summarize recent `logs` and publish concise updates to `voice`
 - `psyche-asr.service`: Publish Whisper transcripts on the `asr` topic
 - `psyche-hrs04.service`: Ultrasonic sensor node (pins from host config)
 - `psyche-display.service`: SSD1306 OLED topic display
+
+Log summarization
+-----------------
+
+The log ticker now publishes raw journal lines on the `logs` topic. The new
+log summarizer buffers recent lines and periodically (default every 20s)
+publishes a short English summary to the `voice` topic for speaking.
+
+Backends (auto-detected):
+- Ollama: set `OLLAMA_MODEL` (default `gpt-oss:20b`) and ensure `ollama` is installed
+- llama.cpp: set `LLAMA_MODEL_PATH` to a local `.gguf` model and install `llama-cpp-python`
+- Fallback: heuristic summary when no local LLM is available
+
+Environment overrides:
+- `SUMMARY_INTERVAL` (seconds, default `20`)
+- `SUMMARY_MAX_LINES` (default `200`)
 
 Notes
 -----

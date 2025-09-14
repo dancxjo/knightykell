@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish system logs to the ``voice`` topic as a ticker.
+"""Publish system logs to the ``logs`` topic as a ticker.
 
 Examples:
     Run the ticker::
@@ -17,11 +17,15 @@ from std_msgs.msg import String
 
 
 class LogTicker(Node):
-    """Send journal entries to the ``voice`` topic."""
+    """Send journal entries to the ``logs`` topic.
+
+    Downstream services (e.g., ``log_summarizer.py``) can subscribe to
+    ``logs`` and publish concise summaries to the ``voice`` topic for TTS.
+    """
 
     def __init__(self) -> None:
         super().__init__("log_ticker")
-        self._pub = self.create_publisher(String, "voice", 10)
+        self._pub = self.create_publisher(String, "logs", 10)
         threading.Thread(target=self._tail, daemon=True).start()
 
     def _tail(self) -> None:

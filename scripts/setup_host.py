@@ -150,6 +150,7 @@ def stage_runtime_assets() -> None:
     for name in (
         "voice_service.py",
         "log_ticker.py",
+        "log_summarizer.py",
         "asr_service.py",
         "hrs04_node.py",
         "ssd1306_display_node.py",
@@ -810,6 +811,16 @@ def launch_logticker(run=subprocess.run) -> None:
     install_service_unit("logticker", cmd, run)
 
 
+def launch_logsummarizer(run=subprocess.run) -> None:
+    """Install systemd unit that summarizes logs to ``voice``.
+
+    Examples:
+        >>> launch_logsummarizer(lambda cmd, check: None)  # doctest: +SKIP
+    """
+    cmd = [str(VENV_DIR / "bin/python"), script_path("log_summarizer.py")]
+    install_service_unit("logsummarizer", cmd, run)
+
+
 def launch_asr(cfg: dict | None = None, run=subprocess.run) -> None:
     """Install systemd unit for Whisper-based transcription.
 
@@ -866,6 +877,9 @@ def main() -> None:
         elif svc == "logticker":
             launch_logticker()
             installed.append("logticker")
+        elif svc == "logsummarizer":
+            launch_logsummarizer()
+            installed.append("logsummarizer")
         elif svc == "asr":
             launch_asr(scfg)
             installed.append("asr")
