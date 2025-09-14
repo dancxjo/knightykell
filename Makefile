@@ -53,31 +53,31 @@ ros2-dev-run:
 # Docker Compose helpers
 compose-up:
 	$(REQUIRE_COMPOSE)
-	@$(DOCKER_COMPOSE) up -d --build ros2
+	@$(DOCKER_COMPOSE) -p psyche up -d --build ros2
 
 compose-down:
 	$(REQUIRE_COMPOSE)
-	@$(DOCKER_COMPOSE) down
+	@$(DOCKER_COMPOSE) -p psyche down
 
 compose-shell:
 	$(REQUIRE_COMPOSE)
-	@$(DOCKER_COMPOSE) exec ros2 bash
+	@$(DOCKER_COMPOSE) -p psyche exec ros2 bash
 
 # Start audio-enabled service (ALSA passthrough)
 compose-up-audio:
 	$(REQUIRE_COMPOSE)
-	@$(DOCKER_COMPOSE) --profile audio up -d --build ros2-audio
+	@$(DOCKER_COMPOSE) -p psyche --profile audio up -d --build ros2-audio
 
 # One-shot provisioning inside the container (no systemd)
 compose-provision:
 	$(REQUIRE_COMPOSE)
-	@$(DOCKER_COMPOSE) --profile provision up --build --abort-on-container-exit ros2-provision
+	@$(DOCKER_COMPOSE) -p psyche --profile provision up --build --abort-on-container-exit ros2-provision
 
 # Start PulseAudio client container (needs host Pulse socket)
 compose-up-pulse:
 	$(REQUIRE_COMPOSE)
-	@$(DOCKER_COMPOSE) --profile pulse up -d --build ros2-pulse
+	@$(DOCKER_COMPOSE) -p psyche --profile pulse up -d --build ros2-pulse
 
 compose-shell-pulse:
 	$(REQUIRE_COMPOSE)
-	@$(DOCKER_COMPOSE) exec ros2-pulse bash
+	@$(DOCKER_COMPOSE) -p psyche exec ros2-pulse bash
